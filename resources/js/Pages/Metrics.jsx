@@ -137,21 +137,21 @@ export default function Metrics(props) {
     // Endpoints
     const base = `/apps/${app.id}/metrics`;
 
-    // Instant metrics
-    const connInstant = useInstant(`${base}/query?query=${encodeURIComponent('soketi_6001_connected')}`);
+    // Instant metrics (updated metric name)
+    const connInstant = useInstant(`${base}/query?query=${encodeURIComponent('soketi_connected')}`);
 
-    // Ranges
+    // Ranges (updated to actual Soketi metric names)
     const newConn = useRange(
-        `${base}/query_range?query=${encodeURIComponent('increase(soketi_6001_new_connections_total[5m])')}&start=${start}&end=${end}&step=${step}s`
+        `${base}/query_range?query=${encodeURIComponent('increase(soketi_new_connections_total[5m])')}&start=${start}&end=${end}&step=${step}s`
     );
     const disconn = useRange(
-        `${base}/query_range?query=${encodeURIComponent('increase(soketi_6001_new_disconnections_total[5m])')}&start=${start}&end=${end}&step=${step}s`
+        `${base}/query_range?query=${encodeURIComponent('increase(soketi_new_disconnections_total[5m])')}&start=${start}&end=${end}&step=${step}s`
     );
     const rx = useRange(
-        `${base}/query_range?query=${encodeURIComponent('rate(soketi_6001_socket_received_bytes[5m])')}&start=${start}&end=${end}&step=${step}s`
+        `${base}/query_range?query=${encodeURIComponent('rate(soketi_socket_received_bytes[5m])')}&start=${start}&end=${end}&step=${step}s`
     );
     const tx = useRange(
-        `${base}/query_range?query=${encodeURIComponent('rate(soketi_6001_socket_sent_bytes[5m])')}&start=${start}&end=${end}&step=${step}s`
+        `${base}/query_range?query=${encodeURIComponent('rate(soketi_socket_transmitted_bytes[5m])')}&start=${start}&end=${end}&step=${step}s`
     );
 
     // For stat value of range series, show last point
