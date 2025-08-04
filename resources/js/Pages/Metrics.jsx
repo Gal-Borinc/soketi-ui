@@ -330,57 +330,55 @@ export default function Metrics(props) {
     // Real-time instant metrics (high refresh rate)
     const connInstant = useInstant(`${base}/query?query=${encodeURIComponent('soketi_connected')}`, realtimeRefresh);
 
-    // Real-time rate metrics using pre-calculated recording rules for better performance
+    // Real-time rate metrics using raw queries first (fallback from pre-calculated)
     const newConnRate = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:new_connections_rate_1m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('irate(soketi_new_connections_total[1m])')}&start=${start}&end=${end}&step=${step}s`,
         realtimeRefresh
     );
     const disconnRate = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:new_disconnections_rate_1m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('irate(soketi_new_disconnections_total[1m])')}&start=${start}&end=${end}&step=${step}s`,
         realtimeRefresh
     );
 
-    // Bandwidth metrics with pre-calculated rates
+    // Bandwidth metrics with raw queries
     const rxRate = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:rx_bytes_rate_1m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('irate(soketi_socket_received_bytes[1m])')}&start=${start}&end=${end}&step=${step}s`,
         realtimeRefresh
     );
     const txRate = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:tx_bytes_rate_1m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('irate(soketi_socket_transmitted_bytes[1m])')}&start=${start}&end=${end}&step=${step}s`,
         realtimeRefresh
     );
 
-    // Trending data using pre-calculated recording rules (lower refresh rate)
+    // Trending data using raw queries (lower refresh rate)
     const newConnTrend = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:new_connections_rate_5m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('rate(soketi_new_connections_total[5m])')}&start=${start}&end=${end}&step=${step}s`,
         trendingRefresh
     );
     const disconnTrend = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:new_disconnections_rate_5m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('rate(soketi_new_disconnections_total[5m])')}&start=${start}&end=${end}&step=${step}s`,
         trendingRefresh
     );
 
-    // Counter increases using pre-calculated metrics
+    // Counter increases using raw queries
     const newConnIncrease = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:new_connections_increase_5m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('increase(soketi_new_connections_total[5m])')}&start=${start}&end=${end}&step=${step}s`,
         trendingRefresh
     );
     const disconnIncrease = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:new_disconnections_increase_5m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('increase(soketi_new_disconnections_total[5m])')}&start=${start}&end=${end}&step=${step}s`,
         trendingRefresh
     );
 
-    // Health metrics using pre-calculated recording rules
+    // Health metrics calculated from basic queries
     const netConnRate = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:net_connection_rate_1m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('irate(soketi_new_connections_total[1m]) - irate(soketi_new_disconnections_total[1m])')}&start=${start}&end=${end}&step=${step}s`,
         realtimeRefresh
     );
     const churnRate = useRange(
-        `${base}/query_range?query=${encodeURIComponent('soketi:connection_churn_rate_1m')}&start=${start}&end=${end}&step=${step}s`,
+        `${base}/query_range?query=${encodeURIComponent('irate(soketi_new_connections_total[1m]) + irate(soketi_new_disconnections_total[1m])')}&start=${start}&end=${end}&step=${step}s`,
         realtimeRefresh
-    );
-
-    // Helper function to get last value from series
+    );    // Helper function to get last value from series
     const lastOf = (queryResult) => {
         if (queryResult.error) return null;
         return queryResult.series.length ? queryResult.series[queryResult.series.length - 1][1] : null;
@@ -407,8 +405,8 @@ export default function Metrics(props) {
                         <button
                             onClick={togglePause}
                             className={`px-3 py-1 rounded text-sm font-medium ${isPaused
-                                    ? 'bg-red-100 text-red-800 hover:bg-red-200'
-                                    : 'bg-green-100 text-green-800 hover:bg-green-200'
+                                ? 'bg-red-100 text-red-800 hover:bg-red-200'
+                                : 'bg-green-100 text-green-800 hover:bg-green-200'
                                 }`}
                         >
                             {isPaused ? '▶ Resume' : '⏸ Pause'} Auto-refresh

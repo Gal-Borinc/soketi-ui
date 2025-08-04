@@ -63,6 +63,13 @@ class MetricsController extends Controller
             'soketi:new_connections_increase_5m',
             'soketi:new_disconnections_increase_5m',
         ],
+        // Combined/calculated metrics
+        'calculated' => [
+            'irate(soketi_new_connections_total[1m]) - irate(soketi_new_disconnections_total[1m])',
+            'irate(soketi_new_connections_total[1m]) + irate(soketi_new_disconnections_total[1m])',
+            'rate(soketi_new_connections_total[5m]) - rate(soketi_new_disconnections_total[5m])',
+            'rate(soketi_new_connections_total[5m]) + rate(soketi_new_disconnections_total[5m])',
+        ],
         // Aggregated and health metrics
         'aggregated' => [
             'sum(soketi_connected)',
