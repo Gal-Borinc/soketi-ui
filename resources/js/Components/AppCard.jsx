@@ -88,7 +88,18 @@ export default function AppCard({ app }) {
                 <div className='flex items-center justify-between'>
                     <h2 className='text-xl font-bold'>{app.name}</h2>
                     <div className='flex items-center space-x-4'>
-                        <a className='transition-colors duration-150 bg-indigo-500 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg' href={'/apps/' + app.id + '/debug'}>Debug</a>
+                        <a
+                            className='transition-colors duration-150 bg-gray-100 hover:bg-gray-200 text-gray-800 px-4 py-2 rounded-lg border border-gray-300'
+                            href={'/apps/' + app.id + '/metrics'}
+                        >
+                            Metrics
+                        </a>
+                        <a
+                            className='transition-colors duration-150 bg-indigo-500 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg'
+                            href={'/apps/' + app.id + '/debug'}
+                        >
+                            Debug
+                        </a>
                         <div className={'w-8 h-8 rounded-full ' + (app.enabled ? 'bg-green-500 shadow-lg' : 'bg-gray-500')} />
                     </div>
                 </div>
@@ -132,7 +143,7 @@ export default function AppCard({ app }) {
                         <h3 className='pl-1 text-lg font-bold'>Limits</h3>
                     </div>
                     <div className='pt-2 grid grid-cols-2 md:grid-cols-3 gap-4'>
-                        {limitItems.map(limitItem => <LabelledCard key={limitItem.key} label={limitItem.label} value={(! app[limitItem.key] || app[limitItem.key] === -1) ? '∞' : app[limitItem.key]} />)}
+                        {limitItems.map(limitItem => <LabelledCard key={limitItem.key} label={limitItem.label} value={(!app[limitItem.key] || app[limitItem.key] === -1) ? '∞' : app[limitItem.key]} />)}
                     </div>
                     <LimitsModal app={app} limitItems={limitItems} show={limitsModalOpen} setShow={setLimitsModalOpen} />
                 </div>
@@ -144,7 +155,7 @@ export default function AppCard({ app }) {
                     <div className='pt-2 grid lg:grid-cols-2 gap-2'>
                         {app.webhooks && app.webhooks.map((webhook, index) => <WebhookCard key={index} appId={app.id} webhook={webhook} onEdit={() => editWebhook(webhook.id)} />)}
                     </div>
-                    {! app.webhooks?.length && (
+                    {!app.webhooks?.length && (
                         <div className='p-4 border border-dashed text-gray-500 border-gray-200 shadow-sm rounded-xl'>
                             No webhooks configured
                         </div>
