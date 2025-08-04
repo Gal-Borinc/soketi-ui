@@ -5,6 +5,7 @@ use App\Http\Controllers\DebugController;
 use App\Http\Controllers\LimitsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\WebhooksController;
+use App\Http\Controllers\MetricsController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -31,6 +32,13 @@ Route::middleware(['auth', 'verified'])->prefix('apps')->name('apps.')->group(fu
     Route::prefix('{app}')->group(function () {
         Route::get('debug', [DebugController::class, 'index'])->name('debug');
         Route::post('toggle-debug', [WebhooksController::class, 'toggleDebuggingWebhook'])->name('toggle-debug');
+
+        // ───────────────────────────────────────── Metrics proxy + page
+        Route::get('metrics', [MetricsController::class, 'page'])->name('metrics');
+        Route::prefix('metrics')->name('metrics.')->group(function () {
+            Route::get('query', [MetricsController::class, 'query'])->name('query');
+            Route::get('query_range', [MetricsController::class, 'queryRange'])->name('query_range');
+        });
 
         Route::prefix('webhooks')->name('webhooks.')->group(function () {
             Route::post('save', [WebhooksController::class, 'save']);
