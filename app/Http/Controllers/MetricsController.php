@@ -9,9 +9,14 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\Response;
 use Illuminate\Support\Facades\Config;
 
-// Bring in global helpers for static analysis (Laravel provides them at runtime)
+// Use helpers and facades explicitly to satisfy static analysis and ensure availability
+use Illuminate\Support\Facades\Response as FacadeResponse;
+use Illuminate\Support\Facades\Config as FacadeConfig;
+use Illuminate\Support\Facades\Http as FacadeHttp;
+use Illuminate\Support\Facades\Auth;
 use function abort;
 use function response;
+use function request;
 
 class MetricsController extends Controller
 {
@@ -20,7 +25,7 @@ class MetricsController extends Controller
     public function __construct()
     {
         // Prefer config('services.prometheus.url') if present; fallback to env('UI_PROMETHEUS_URL')
-        $cfgUrl = (string) (Config::get('services.prometheus.url') ?? '');
+        $cfgUrl = (string) (FacadeConfig::get('services.prometheus.url') ?? '');
         $envUrl = (string) (getenv('UI_PROMETHEUS_URL') ?: '');
         $this->baseUrl = rtrim($cfgUrl !== '' ? $cfgUrl : $envUrl, '/');
     }
@@ -42,16 +47,16 @@ class MetricsController extends Controller
         $query = $request->query('query');
         $time  = $request->query('time');
 
-        $this->guardQuery($query);
+        $this->guardQuery($request, $query);
 
         $params = ['query' => $query];
         if ($time) {
             $params['time'] = $time;
         }
 
-        $resp = Http::timeout(5)->get("{$this->baseUrl}/api/v1/query", $params);
+        $resp = FacadeHttp::timeout(5)->get("{$this->baseUrl}/api/v1/query", $params);
 
-        return response()->json($resp->json(), $resp->status());
+        return Response::json($resp->json(), $resp->status());
     }
 
     // Range query for time series
@@ -62,7 +67,7 @@ class MetricsController extends Controller
         $end   = $request->query('end');
         $step  = $request->query('step', '30s');
 
-        $this->guardQuery($query);
+        $this->guardQuery($request, $query);
 
         $params = array_filter([
             'query' => $query,
@@ -71,27 +76,39 @@ class MetricsController extends Controller
             'step'  => $step,
         ], fn ($v) => $v !== null && $v !== '');
 
-        $resp = Http::timeout(10)->get("{$this->baseUrl}/api/v1/query_range", $params);
+        $resp = FacadeHttp::timeout(10)->get("{$this->baseUrl}/api/v1/query_range", $params);
 
-        return response()->json($resp->json(), $resp->status());
+        return Response::json($resp->json(), $resp->status());
     }
 
     // Simple allowlist to avoid arbitrary PromQL
-    private function guardQuery(?string $query): void
+    private function guardQuery(Request $request, ?string $query): void
     {
-        if (!$this->baseUrl) {
+        if ($this->baseUrl === '') {
             abort(503, 'Prometheus URL not configured');
         }
-        if (!$query) {
+
+        // Enforce auth (routes already behind auth; this is defense in depth)
+        if (!Auth::check()) {
+            abort(403, 'Forbidden');
+        }
+
+        // Only allow GET
+        if (strtoupper($request->getMethod()) !== 'GET') {
+            abort(405, 'Method Not Allowed');
+        }
+
+        if ($query === null || $query === '') {
             abort(400, 'Missing query');
         }
 
+        // Updated allowlist to match actual Soketi metric names observed
         $allow = [
-            'soketi_6001_connected',
-            'increase(soketi_6001_new_connections_total[5m])',
-            'increase(soketi_6001_new_disconnections_total[5m])',
-            'rate(soketi_6001_socket_received_bytes[5m])',
-            'rate(soketi_6001_socket_sent_bytes[5m])',
+            'soketi_connected',
+            'increase(soketi_new_connections_total[5m])',
+            'increase(soketi_new_disconnections_total[5m])',
+            'rate(soketi_socket_received_bytes[5m])',
+            'rate(soketi_socket_transmitted_bytes[5m])',
         ];
 
         $normalized = preg_replace('/\s+/', '', $query);
