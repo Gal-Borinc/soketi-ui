@@ -290,6 +290,8 @@ export default function WebhookMetrics(props) {
 
     return (
         <AuthenticatedLayout
+            auth={props.auth}
+            errors={props.errors}
             header={
                 <div className="flex items-center justify-between">
                     <h2 className="font-semibold text-xl text-gray-800 leading-tight">
@@ -299,8 +301,8 @@ export default function WebhookMetrics(props) {
                         <button
                             onClick={togglePause}
                             className={`px-3 py-1 rounded text-sm ${isPaused
-                                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                    : 'bg-red-100 text-red-700 hover:bg-red-200'
+                                ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                : 'bg-red-100 text-red-700 hover:bg-red-200'
                                 }`}
                         >
                             {isPaused ? '▶ Resume' : '⏸ Pause'}
