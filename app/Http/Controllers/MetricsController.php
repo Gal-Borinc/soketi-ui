@@ -102,13 +102,21 @@ class MetricsController extends Controller
             abort(400, 'Missing query');
         }
 
-        // Updated allowlist to match actual Soketi metric names observed
+        // Updated allowlist to match actual Soketi metric names observed.
+        // Allow both 1m and 5m windows and both "sent"/"transmitted" variants to avoid 403 on UI tweaks.
         $allow = [
             'soketi_connected',
+            'increase(soketi_new_connections_total[1m])',
             'increase(soketi_new_connections_total[5m])',
+            'increase(soketi_new_disconnections_total[1m])',
             'increase(soketi_new_disconnections_total[5m])',
+            'rate(soketi_socket_received_bytes[1m])',
             'rate(soketi_socket_received_bytes[5m])',
+            'rate(soketi_socket_transmitted_bytes[1m])',
             'rate(soketi_socket_transmitted_bytes[5m])',
+            // compatibility if some exporters expose "sent" naming
+            'rate(soketi_socket_sent_bytes[1m])',
+            'rate(soketi_socket_sent_bytes[5m])',
         ];
 
         $normalized = preg_replace('/\s+/', '', $query);
