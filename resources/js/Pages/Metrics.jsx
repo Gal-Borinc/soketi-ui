@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import AuthenticatedLayout from '../Layouts/AuthenticatedLayout.jsx';
-import { Head, usePage } from '@inertiajs/inertia-react';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { Head, usePage } from '@inertiajs/react';
 
 function fmt(val, digits = 2) {
     if (val == null) return '-';
