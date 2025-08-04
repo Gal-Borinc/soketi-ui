@@ -33,12 +33,12 @@ Route::middleware(['auth', 'verified'])->prefix('apps')->name('apps.')->group(fu
         Route::get('debug', [DebugController::class, 'index'])->name('debug');
         Route::post('toggle-debug', [WebhooksController::class, 'toggleDebuggingWebhook'])->name('toggle-debug');
 
-        // ───────────────────────────────────────── Metrics proxy + page
+        // ───────────────────────────────────────── Webhook-based Metrics
         Route::get('metrics', [MetricsController::class, 'page'])->name('metrics');
         Route::prefix('metrics')->name('metrics.')->group(function () {
-            Route::get('query', [MetricsController::class, 'query'])->name('query');
-            Route::get('query_range', [MetricsController::class, 'queryRange'])->name('query_range');
-            Route::get('available', [MetricsController::class, 'getAvailableMetrics'])->name('available');
+            Route::get('cached', [MetricsController::class, 'getCachedMetrics'])->name('cached');
+            Route::get('timeseries', [MetricsController::class, 'getTimeSeriesData'])->name('timeseries');
+            Route::post('webhook', [MetricsController::class, 'webhook'])->name('webhook')->withoutMiddleware(['auth', 'verified']);
         });
 
         Route::prefix('webhooks')->name('webhooks.')->group(function () {
