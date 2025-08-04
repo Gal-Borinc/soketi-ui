@@ -137,10 +137,8 @@ export default function Metrics(props) {
     // Endpoints
     const base = `/apps/${app.id}/metrics`;
 
-    // Instant metrics (updated metric name)
     const connInstant = useInstant(`${base}/query?query=${encodeURIComponent('soketi_connected')}`);
 
-    // Ranges (reverted to 5m window to match backend allowlist and give smoother graphs)
     const newConn = useRange(
         `${base}/query_range?query=${encodeURIComponent('increase(soketi_new_connections_total[5m])')}&start=${start}&end=${end}&step=${step}s`
     );
