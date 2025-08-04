@@ -31,4 +31,20 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Prometheus Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for Prometheus metrics integration. The URL should point
+    | to your Prometheus server for querying metrics data.
+    |
+    */
+    'prometheus' => [
+        'url' => env('PROMETHEUS_URL', env('UI_PROMETHEUS_URL', 'http://prometheus:9090')),
+        'timeout' => env('PROMETHEUS_TIMEOUT', 10), // seconds
+        'cache_ttl' => env('PROMETHEUS_CACHE_TTL', 30), // seconds
+        'retry_attempts' => env('PROMETHEUS_RETRY_ATTEMPTS', 2),
+    ],
+
 ];

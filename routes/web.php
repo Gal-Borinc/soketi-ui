@@ -38,6 +38,7 @@ Route::middleware(['auth', 'verified'])->prefix('apps')->name('apps.')->group(fu
         Route::prefix('metrics')->name('metrics.')->group(function () {
             Route::get('query', [MetricsController::class, 'query'])->name('query');
             Route::get('query_range', [MetricsController::class, 'queryRange'])->name('query_range');
+            Route::get('available', [MetricsController::class, 'getAvailableMetrics'])->name('available');
         });
 
         Route::prefix('webhooks')->name('webhooks.')->group(function () {
