@@ -124,9 +124,10 @@ function StatCard({ title, value, loading }) {
     );
 }
 
-export default function Metrics() {
-    const { props } = usePage();
-    const app = props.app;
+export default function Metrics(props) {
+    // Safely obtain app from props or from Inertia page props to avoid undefined auth/user errors
+    const page = usePage();
+    const app = (props && props.app) || (page && page.props && page.props.app) || {};
 
     // Time range: last 30 minutes with 30s step
     const end = Math.floor(Date.now() / 1000);
@@ -158,10 +159,11 @@ export default function Metrics() {
 
     return (
         <AuthenticatedLayout
+            auth={page && page.props ? page.props.auth : undefined}
             header={
                 <div className="flex items-center justify-between">
                     <h2 className="text-xl font-semibold leading-tight text-gray-800">
-                        {app.name || app.id} • Metrics
+                        {(app && (app.name || app.id)) ? (app.name || app.id) : 'App'} • Metrics
                     </h2>
                 </div>
             }
