@@ -131,8 +131,9 @@ export default function Metrics(props) {
 
     // Time range: last 30 minutes with 30s step
     const end = Math.floor(Date.now() / 1000);
-    const start = end - 30 * 60;
-    const step = 30;
+    const start = end - 30 * 60; // last 30 minutes
+    // Match Prometheus high-resolution scraping so we see short-lived activity
+    const step = 2; // seconds
 
     // Endpoints
     const base = `/apps/${app.id}/metrics`;
@@ -142,16 +143,16 @@ export default function Metrics(props) {
 
     // Ranges (updated to actual Soketi metric names)
     const newConn = useRange(
-        `${base}/query_range?query=${encodeURIComponent('increase(soketi_new_connections_total[5m])')}&start=${start}&end=${end}&step=${step}s`
+        `${base}/query_range?query=${encodeURIComponent('increase(soketi_new_connections_total[1m])')}&start=${start}&end=${end}&step=${step}s`
     );
     const disconn = useRange(
-        `${base}/query_range?query=${encodeURIComponent('increase(soketi_new_disconnections_total[5m])')}&start=${start}&end=${end}&step=${step}s`
+        `${base}/query_range?query=${encodeURIComponent('increase(soketi_new_disconnections_total[1m])')}&start=${start}&end=${end}&step=${step}s`
     );
     const rx = useRange(
-        `${base}/query_range?query=${encodeURIComponent('rate(soketi_socket_received_bytes[5m])')}&start=${start}&end=${end}&step=${step}s`
+        `${base}/query_range?query=${encodeURIComponent('rate(soketi_socket_received_bytes[1m])')}&start=${start}&end=${end}&step=${step}s`
     );
     const tx = useRange(
-        `${base}/query_range?query=${encodeURIComponent('rate(soketi_socket_transmitted_bytes[5m])')}&start=${start}&end=${end}&step=${step}s`
+        `${base}/query_range?query=${encodeURIComponent('rate(soketi_socket_transmitted_bytes[1m])')}&start=${start}&end=${end}&step=${step}s`
     );
 
     // For stat value of range series, show last point
