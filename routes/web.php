@@ -25,7 +25,7 @@ use Inertia\Inertia;
 Route::get('/', fn () => redirect('/login'));
 
 // Upload metrics API endpoints (called from Laravel app)
-Route::prefix('upload-metrics')->name('upload-metrics.')->group(function () {
+Route::prefix('upload-metrics')->name('upload-metrics.')->middleware('api.token')->group(function () {
     Route::post('prepared', [UploadMetricsController::class, 'uploadPrepared'])->name('prepared');
     Route::post('completed', [UploadMetricsController::class, 'uploadCompleted'])->name('completed');
     Route::post('failed', [UploadMetricsController::class, 'uploadFailed'])->name('failed');
