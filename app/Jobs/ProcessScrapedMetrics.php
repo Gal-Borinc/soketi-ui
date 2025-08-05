@@ -10,17 +10,20 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
+use App\Services\UploadMetricsService;
 
 class ProcessScrapedMetrics implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     private int $cacheTtl = 600; // 10 minutes
+    private UploadMetricsService $uploadMetricsService;
     
     public function __construct()
     {
         // Job configuration
         $this->onQueue('metrics');
+        $this->uploadMetricsService = app(UploadMetricsService::class);
     }
 
     /**
@@ -49,6 +52,10 @@ class ProcessScrapedMetrics implements ShouldQueue
             ]);
             
             Cache::put('soketi:enhanced_metrics', $enhancedMetrics, $this->cacheTtl);
+            
+            // Get upload metrics from tracking service
+            $uploadMetrics = $this->uploadMetricsService->getUploadMetrics();
+            $enhancedMetrics['upload_metrics'] = $uploadMetrics;
             
             // Update real-time metrics cache (for backwards compatibility with existing API)
             $this->updateRealtimeMetricsCache($enhancedMetrics, $timestamp);

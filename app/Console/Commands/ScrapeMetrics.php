@@ -211,19 +211,27 @@ class ScrapeMetrics extends Command
      */
     private function extractKeyMetrics(array $prometheusMetrics, ?array $usageMetrics): array
     {
+        // Get previous metrics to calculate deltas for counters
+        $previousMetrics = Cache::get('soketi:previous_raw_metrics', []);
+        
         $processed = [
             'connections' => [
                 'current' => 0,
                 'total_new' => 0,
                 'total_disconnections' => 0,
+                'new_since_last_scrape' => 0,
+                'disconnections_since_last_scrape' => 0,
             ],
             'data_transfer' => [
                 'bytes_received' => 0,
                 'bytes_sent' => 0,
+                'bytes_received_since_last_scrape' => 0,
+                'bytes_sent_since_last_scrape' => 0,
             ],
             'websockets' => [
                 'current_connections' => 0,
                 'messages_sent' => 0,
+                'messages_sent_since_last_scrape' => 0,
             ],
             'system' => [
                 'memory_usage' => 0,
@@ -233,35 +241,56 @@ class ScrapeMetrics extends Command
             'apps' => []
         ];
         
+        $currentRawMetrics = [];
+        
         // Process Prometheus metrics
         foreach ($prometheusMetrics as $metric) {
             $name = $metric['name'];
             $value = $metric['value'];
             $labels = $metric['labels'];
             
+            // Store raw values for next comparison
+            $currentRawMetrics[$name] = $value;
+            
             switch ($name) {
                 case 'soketi_6001_connected':
+                    // This is a gauge (current value), not a counter
                     $processed['connections']['current'] = (int) $value;
                     break;
                     
                 case 'soketi_6001_new_connections_total':
+                    // This is a counter - store total and calculate delta
                     $processed['connections']['total_new'] = (int) $value;
+                    $previousValue = $previousMetrics[$name] ?? 0;
+                    $processed['connections']['new_since_last_scrape'] = max(0, (int) $value - $previousValue);
                     break;
                     
                 case 'soketi_6001_new_disconnections_total':
+                    // This is a counter - store total and calculate delta
                     $processed['connections']['total_disconnections'] = (int) $value;
+                    $previousValue = $previousMetrics[$name] ?? 0;
+                    $processed['connections']['disconnections_since_last_scrape'] = max(0, (int) $value - $previousValue);
                     break;
                     
                 case 'soketi_6001_socket_received_bytes':
+                    // This is a counter - store total and calculate delta
                     $processed['data_transfer']['bytes_received'] = (int) $value;
+                    $previousValue = $previousMetrics[$name] ?? 0;
+                    $processed['data_transfer']['bytes_received_since_last_scrape'] = max(0, (int) $value - $previousValue);
                     break;
                     
                 case 'soketi_6001_socket_sent_bytes':
+                    // This is a counter - store total and calculate delta
                     $processed['data_transfer']['bytes_sent'] = (int) $value;
+                    $previousValue = $previousMetrics[$name] ?? 0;
+                    $processed['data_transfer']['bytes_sent_since_last_scrape'] = max(0, (int) $value - $previousValue);
                     break;
                     
                 case 'soketi_ws_messages_sent_total':
+                    // This is a counter - store total and calculate delta
                     $processed['websockets']['messages_sent'] = (int) $value;
+                    $previousValue = $previousMetrics[$name] ?? 0;
+                    $processed['websockets']['messages_sent_since_last_scrape'] = max(0, (int) $value - $previousValue);
                     break;
                     
                 // Node.js process metrics
@@ -278,6 +307,9 @@ class ScrapeMetrics extends Command
                     break;
             }
         }
+        
+        // Store current raw metrics for next comparison
+        Cache::put('soketi:previous_raw_metrics', $currentRawMetrics, $this->cacheTimeout);
         
         // Include usage metrics if available
         if ($usageMetrics) {

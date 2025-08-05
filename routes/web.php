@@ -6,6 +6,7 @@ use App\Http\Controllers\LimitsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\WebhooksController;
 use App\Http\Controllers\SoketiMetricsController;
+use App\Http\Controllers\UploadMetricsController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -23,7 +24,15 @@ use Inertia\Inertia;
 
 Route::get('/', fn () => redirect('/login'));
 
-// Webhook routes removed - using direct metrics scraping instead
+// Upload metrics API endpoints (called from Laravel app)
+Route::prefix('upload-metrics')->name('upload-metrics.')->group(function () {
+    Route::post('prepared', [UploadMetricsController::class, 'uploadPrepared'])->name('prepared');
+    Route::post('completed', [UploadMetricsController::class, 'uploadCompleted'])->name('completed');
+    Route::post('failed', [UploadMetricsController::class, 'uploadFailed'])->name('failed');
+    Route::get('metrics', [UploadMetricsController::class, 'getMetrics'])->name('metrics');
+    Route::get('active-sessions', [UploadMetricsController::class, 'getActiveSessions'])->name('active-sessions');
+    Route::post('cleanup', [UploadMetricsController::class, 'cleanup'])->name('cleanup');
+});
 
 Route::middleware(['auth', 'verified'])->prefix('apps')->name('apps.')->group(function () {
     Route::get('/', [AppsController::class, 'index'])->name('index');
