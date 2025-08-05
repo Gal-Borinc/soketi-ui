@@ -28,6 +28,11 @@ function fmt(val, type = 'number', digits = 2) {
         return n.toFixed(digits) + '%';
     }
 
+    // Format rate
+    if (type === 'rate') {
+        return n.toFixed(digits) + '/min';
+    }
+
     // Format general numbers
     if (n >= 1e9) return (n / 1e9).toFixed(digits) + 'G';
     if (n >= 1e6) return (n / 1e6).toFixed(digits) + 'M';
@@ -36,60 +41,42 @@ function fmt(val, type = 'number', digits = 2) {
 }
 
 // Enhanced fetch with better error handling
-async function fetchJSON(url, retries = 2) {
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-            const res = await fetch(url, {
-                credentials: 'include',
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                },
-            });
+async function fetchJSON(url, options = {}) {
+    const res = await fetch(url, {
+        credentials: 'include',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            ...options.headers
+        },
+        ...options
+    });
 
-            if (!res.ok) {
-                if (res.status >= 500 && attempt < retries) {
-                    await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
-                    continue;
-                }
-                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-            }
-
-            return res.json();
-        } catch (error) {
-            if (attempt === retries) {
-                throw error;
-            }
-        }
+    if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }
+
+    return res.json();
 }
 
-// Hook for webhook-based cached metrics
+// Hook for cached metrics from Soketi scraper
 function useCachedMetrics(endpoint, refreshInterval = 5000, enabled = true) {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [lastUpdate, setLastUpdate] = useState(null);
-    const abortControllerRef = useRef(null);
 
     const fetchData = useCallback(async () => {
         if (!enabled) return;
 
         try {
-            if (abortControllerRef.current) {
-                abortControllerRef.current.abort();
-            }
-            abortControllerRef.current = new AbortController();
-
             setError(null);
             const result = await fetchJSON(endpoint);
             setData(result);
             setLastUpdate(new Date().toISOString());
         } catch (err) {
-            if (err.name !== 'AbortError') {
-                setError(err.message);
-                console.error('Cached metrics fetch error:', err);
-            }
+            setError(err.message);
+            console.error('Cached metrics fetch error:', err);
         } finally {
             setLoading(false);
         }
@@ -105,42 +92,6 @@ function useCachedMetrics(endpoint, refreshInterval = 5000, enabled = true) {
     }, [fetchData, refreshInterval, enabled]);
 
     return { data, loading, error, lastUpdate, refetch: fetchData };
-}
-
-// Hook for time series data
-function useTimeSeriesData(endpoint, metric, range = '1h', refreshInterval = 10000, enabled = true) {
-    const [series, setSeries] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [lastUpdate, setLastUpdate] = useState(null);
-
-    const fetchData = useCallback(async () => {
-        if (!enabled) return;
-
-        try {
-            setError(null);
-            const url = `${endpoint}?metric=${metric}&range=${range}`;
-            const result = await fetchJSON(url);
-            setSeries(result.data || []);
-            setLastUpdate(new Date().toISOString());
-        } catch (err) {
-            setError(err.message);
-            console.error('Time series fetch error:', err);
-        } finally {
-            setLoading(false);
-        }
-    }, [endpoint, metric, range, enabled]);
-
-    useEffect(() => {
-        fetchData();
-
-        if (enabled && refreshInterval > 0) {
-            const interval = setInterval(fetchData, refreshInterval);
-            return () => clearInterval(interval);
-        }
-    }, [fetchData, refreshInterval, enabled]);
-
-    return { series, loading, error, lastUpdate, refetch: fetchData };
 }
 
 // Simple Line Chart component
@@ -218,13 +169,17 @@ function LineChart({ data, title, color = "#6366F1", error = null }) {
 }
 
 // Status indicator component
-function StatusIndicator({ loading, error, lastUpdate }) {
+function StatusIndicator({ loading, error, lastUpdate, scraperStatus = null }) {
     if (error) {
         return <div className="text-xs text-red-500">● Error</div>;
     }
 
     if (loading) {
         return <div className="text-xs text-yellow-500">● Loading</div>;
+    }
+
+    if (scraperStatus?.is_stale) {
+        return <div className="text-xs text-orange-500">● Stale Data</div>;
     }
 
     return (
@@ -240,12 +195,17 @@ function StatusIndicator({ loading, error, lastUpdate }) {
 }
 
 // Stat Card component
-function StatCard({ title, value, loading, error, type = 'number', lastUpdate = null }) {
+function StatCard({ title, value, loading, error, type = 'number', lastUpdate = null, scraperStatus = null }) {
     return (
         <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-500">{title}</div>
-                <StatusIndicator loading={loading} error={error} lastUpdate={lastUpdate} />
+                <StatusIndicator 
+                    loading={loading} 
+                    error={error} 
+                    lastUpdate={lastUpdate}
+                    scraperStatus={scraperStatus}
+                />
             </div>
             <div className="mt-1 text-2xl font-semibold text-gray-900">
                 {error ? 'Error' : loading ? '…' : fmt(value, type)}
@@ -270,36 +230,128 @@ function ChartCard({ title, data, loading, error, color = "#6366F1" }) {
     );
 }
 
-export default function WebhookMetrics(props) {
+// Soketi Health Component
+function SoketiHealth({ health, onRefresh }) {
+    if (!health) return null;
+
+    const overallStatus = health.overall_healthy ? 'Healthy' : 'Unhealthy';
+    const statusColor = health.overall_healthy ? 'text-green-600' : 'text-red-600';
+
+    return (
+        <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium">Soketi Server Health</h3>
+                <div className={`text-sm font-medium ${statusColor}`}>
+                    ● {overallStatus}
+                </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                {health.websocket_api && (
+                    <div>
+                        <span className="font-medium">WebSocket API:</span>
+                        <div className="ml-2">
+                            <span className={health.websocket_api.healthy ? 'text-green-600' : 'text-red-600'}>
+                                {health.websocket_api.healthy ? '✓' : '✗'} 
+                                {health.websocket_api.status_code ? ` HTTP ${health.websocket_api.status_code}` : ''}
+                            </span>
+                            {health.websocket_api.response_time_ms && (
+                                <span className="text-gray-500 ml-2">
+                                    ({health.websocket_api.response_time_ms}ms)
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+                
+                {health.metrics_api && (
+                    <div>
+                        <span className="font-medium">Metrics API:</span>
+                        <div className="ml-2">
+                            <span className={health.metrics_api.healthy ? 'text-green-600' : 'text-red-600'}>
+                                {health.metrics_api.healthy ? '✓' : '✗'} 
+                                {health.metrics_api.status_code ? ` HTTP ${health.metrics_api.status_code}` : ''}
+                            </span>
+                            {health.metrics_api.response_time_ms && (
+                                <span className="text-gray-500 ml-2">
+                                    ({health.metrics_api.response_time_ms}ms)
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+            
+            <div className="flex items-center justify-between mt-4">
+                <div className="text-xs text-gray-500">
+                    Last checked: {health.checked_at ? new Date(health.checked_at).toLocaleTimeString() : 'Never'}
+                </div>
+                <button
+                    onClick={onRefresh}
+                    className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                >
+                    Refresh
+                </button>
+            </div>
+        </div>
+    );
+}
+
+export default function SoketiMetrics(props) {
     const page = usePage();
     const app = (props && props.app) || (page && page.props && page.props.app) || {};
     const config = (props && props.config) || (page && page.props && page.props.config) || {};
 
-    // Webhook-based metrics endpoints
+    // Soketi metrics endpoints
     const base = `/apps/${app.id}/metrics`;
     const cachedEndpoint = `${base}/cached`;
-    const timeSeriesEndpoint = `${base}/timeseries`;
+    const healthEndpoint = `${base}/health`;
 
     // Real-time settings
     const realtimeRefresh = config.realtime_refresh_interval || 5000; // 5 seconds
 
-    // Get cached metrics (real-time data from webhooks)
+    // Get cached metrics (real-time data from scraper)
     const cachedMetrics = useCachedMetrics(cachedEndpoint, realtimeRefresh);
-
-    // Get time series data for charts
-    const connectionsChart = useTimeSeriesData(timeSeriesEndpoint, 'connections', '1h', 10000);
-    const disconnectionsChart = useTimeSeriesData(timeSeriesEndpoint, 'disconnections', '1h', 10000);
 
     // Auto-refresh status
     const [isPaused, setIsPaused] = useState(false);
+    const [health, setHealth] = useState(null);
+
     const togglePause = () => setIsPaused(!isPaused);
+
+    // Fetch Soketi health
+    const fetchHealth = useCallback(async () => {
+        try {
+            const healthData = await fetchJSON(healthEndpoint);
+            setHealth(healthData);
+        } catch (err) {
+            console.error('Failed to fetch Soketi health:', err);
+        }
+    }, [healthEndpoint]);
+
+    // Manual refresh
+    const handleRefresh = useCallback(async () => {
+        try {
+            await fetchJSON(`${base}/refresh`, { method: 'POST' });
+            cachedMetrics.refetch();
+            fetchHealth();
+        } catch (err) {
+            console.error('Failed to refresh metrics:', err);
+        }
+    }, [base, cachedMetrics, fetchHealth]);
+
+    useEffect(() => {
+        fetchHealth();
+        const interval = setInterval(fetchHealth, 30000); // Check health every 30 seconds
+        return () => clearInterval(interval);
+    }, [fetchHealth]);
 
     // Extract values from cached metrics
     const metrics = cachedMetrics.data || {};
     const connectionEvents = metrics.connection_events || {};
     const disconnectionEvents = metrics.disconnection_events || {};
-    const clientEvents = metrics.client_events || {};
     const uploadMetrics = metrics.upload_metrics || {};
+    const scraperStatus = metrics.scraper_status || {};
 
     return (
         <AuthenticatedLayout
@@ -308,9 +360,15 @@ export default function WebhookMetrics(props) {
             header={
                 <div className="flex items-center justify-between">
                     <h2 className="font-semibold text-xl text-gray-800 leading-tight">
-                        Webhook Metrics - {app.name || `App ${app.id}`}
+                        Soketi Metrics - {app.name || `App ${app.id}`}
                     </h2>
                     <div className="flex items-center space-x-4">
+                        <button
+                            onClick={handleRefresh}
+                            className="px-3 py-1 rounded text-sm bg-blue-100 text-blue-700 hover:bg-blue-200"
+                        >
+                            ↻ Refresh
+                        </button>
                         <button
                             onClick={togglePause}
                             className={`px-3 py-1 rounded text-sm ${isPaused
@@ -321,18 +379,21 @@ export default function WebhookMetrics(props) {
                             {isPaused ? '▶ Resume' : '⏸ Pause'}
                         </button>
                         <div className="text-sm text-gray-500">
-                            Refreshes every {realtimeRefresh / 1000}s
+                            Auto-refresh: {realtimeRefresh / 1000}s
                         </div>
                     </div>
                 </div>
             }
         >
-            <Head title="Webhook Metrics" />
+            <Head title="Soketi Metrics" />
 
             <div className="py-12">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
-                    {/* Real-time Stats */}
+                    {/* Soketi Health Status */}
+                    <SoketiHealth health={health} onRefresh={handleRefresh} />
+
+                    {/* Real-time Connection Stats */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <StatCard
                             title="Active Connections"
@@ -340,13 +401,14 @@ export default function WebhookMetrics(props) {
                             loading={cachedMetrics.loading}
                             error={cachedMetrics.error}
                             lastUpdate={cachedMetrics.lastUpdate}
+                            scraperStatus={scraperStatus}
                         />
                         <StatCard
-                            title="Total Members"
-                            value={metrics.total_members}
+                            title="Active Upload Sessions"
+                            value={uploadMetrics.active_uploads || 0}
                             loading={cachedMetrics.loading}
                             error={cachedMetrics.error}
-                            lastUpdate={cachedMetrics.lastUpdate}
+                            scraperStatus={scraperStatus}
                         />
                         <StatCard
                             title="Data Transferred"
@@ -354,18 +416,19 @@ export default function WebhookMetrics(props) {
                             type="bytes"
                             loading={cachedMetrics.loading}
                             error={cachedMetrics.error}
-                            lastUpdate={cachedMetrics.lastUpdate}
+                            scraperStatus={scraperStatus}
                         />
                         <StatCard
-                            title="Active Uploads"
-                            value={uploadMetrics.active_uploads || 0}
+                            title="Avg Session Duration"
+                            value={uploadMetrics.average_duration_seconds || 0}
+                            type="duration"
                             loading={cachedMetrics.loading}
                             error={cachedMetrics.error}
-                            lastUpdate={cachedMetrics.lastUpdate}
+                            scraperStatus={scraperStatus}
                         />
                     </div>
 
-                    {/* Event Activity */}
+                    {/* Connection Activity */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <StatCard
                             title="Connections (Last Hour)"
@@ -393,142 +456,24 @@ export default function WebhookMetrics(props) {
                         />
                     </div>
 
-                    {/* Upload Metrics Section */}
-                    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                        <h3 className="text-lg font-medium mb-4">Upload Metrics</h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <StatCard
-                                title="Total Prepared"
-                                value={uploadMetrics.total_prepared || 0}
-                                loading={cachedMetrics.loading}
-                                error={cachedMetrics.error}
-                            />
-                            <StatCard
-                                title="Total Completed"
-                                value={uploadMetrics.total_completed || 0}
-                                loading={cachedMetrics.loading}
-                                error={cachedMetrics.error}
-                            />
-                            <StatCard
-                                title="Total Failed"
-                                value={uploadMetrics.total_failed || 0}
-                                loading={cachedMetrics.loading}
-                                error={cachedMetrics.error}
-                            />
-                            <StatCard
-                                title="Completion Rate"
-                                value={uploadMetrics.completion_rate || 0}
-                                type="percentage"
-                                loading={cachedMetrics.loading}
-                                error={cachedMetrics.error}
-                            />
-                        </div>
-                        
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <StatCard
-                                title="Average Upload Duration"
-                                value={uploadMetrics.average_duration_seconds || 0}
-                                type="duration"
-                                loading={cachedMetrics.loading}
-                                error={cachedMetrics.error}
-                            />
-                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                                <div className="text-sm text-gray-500 mb-2">Upload Duration Distribution</div>
-                                <div className="space-y-1">
-                                    {uploadMetrics.duration_buckets && Object.entries(uploadMetrics.duration_buckets).map(([bucket, count]) => (
-                                        <div key={bucket} className="flex justify-between text-sm">
-                                            <span className="text-gray-600">{bucket}:</span>
-                                            <span className="font-medium">{count}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Upload Events (Last Hour) */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <StatCard
-                            title="Uploads Prepared (Last Hour)"
-                            value={uploadMetrics.events?.prepared_last_hour || 0}
-                            loading={cachedMetrics.loading}
-                            error={cachedMetrics.error}
-                        />
-                        <StatCard
-                            title="Uploads Completed (Last Hour)"
-                            value={uploadMetrics.events?.completed_last_hour || 0}
-                            loading={cachedMetrics.loading}
-                            error={cachedMetrics.error}
-                        />
-                        <StatCard
-                            title="Uploads Failed (Last Hour)"
-                            value={uploadMetrics.events?.failed_last_hour || 0}
-                            loading={cachedMetrics.loading}
-                            error={cachedMetrics.error}
-                        />
-                    </div>
-
-                    {/* Client Events */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                        <StatCard
-                            title="Upload Prepared Events"
-                            value={clientEvents['chunked-upload.prepared'] || 0}
-                            loading={cachedMetrics.loading}
-                            error={cachedMetrics.error}
-                        />
-                        <StatCard
-                            title="Upload Completed Events"
-                            value={clientEvents['chunked-upload.completed'] || 0}
-                            loading={cachedMetrics.loading}
-                            error={cachedMetrics.error}
-                        />
-                        <StatCard
-                            title="Upload Failed Events"
-                            value={clientEvents['chunked-upload.failed'] || 0}
-                            loading={cachedMetrics.loading}
-                            error={cachedMetrics.error}
-                        />
-                        <StatCard
-                            title="Other Client Events"
-                            value={clientEvents.other || 0}
-                            loading={cachedMetrics.loading}
-                            error={cachedMetrics.error}
-                        />
-                    </div>
-
-                    {/* Charts */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <ChartCard
-                            title="Connection Activity (Last Hour)"
-                            data={connectionsChart.series}
-                            loading={connectionsChart.loading}
-                            error={connectionsChart.error}
-                            color="#10B981"
-                        />
-                        <ChartCard
-                            title="Disconnection Activity (Last Hour)"
-                            data={disconnectionsChart.series}
-                            loading={disconnectionsChart.loading}
-                            error={disconnectionsChart.error}
-                            color="#EF4444"
-                        />
-                    </div>
-
-                    {/* Status Info */}
+                    {/* Scraper Status Info */}
                     <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-                        <h3 className="text-lg font-medium mb-4">Webhook Status</h3>
+                        <h3 className="text-lg font-medium mb-4">Metrics Status</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                             <div>
-                                <span className="font-medium">Data Source:</span> Real-time webhooks from Soketi
+                                <span className="font-medium">Data Source:</span> Direct Soketi scraping
                             </div>
                             <div>
-                                <span className="font-medium">Last Updated:</span> {metrics.last_updated || 'Never'}
+                                <span className="font-medium">Scraper Status:</span> 
+                                <span className={scraperStatus.scraper_working ? 'text-green-600 ml-1' : 'text-red-600 ml-1'}>
+                                    {scraperStatus.scraper_working ? '✓ Working' : '✗ Issues detected'}
+                                </span>
                             </div>
                             <div>
-                                <span className="font-medium">Cache TTL:</span> 5 minutes
+                                <span className="font-medium">Last Scraped:</span> {scraperStatus.last_scraped || 'Never'}
                             </div>
                             <div>
-                                <span className="font-medium">Refresh Rate:</span> Every {realtimeRefresh / 1000} seconds
+                                <span className="font-medium">Soketi Endpoint:</span> {config.soketi_endpoint || 'Not configured'}
                             </div>
                         </div>
                     </div>

@@ -15,7 +15,11 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // $schedule->command('inspire')->hourly();
+        // Scrape Soketi metrics every 10 seconds for real-time monitoring
+        $schedule->command('soketi:scrape-metrics')
+                 ->everyTenSeconds()
+                 ->withoutOverlapping()
+                 ->runInBackground();
     }
 
     /**

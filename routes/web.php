@@ -5,7 +5,7 @@ use App\Http\Controllers\DebugController;
 use App\Http\Controllers\LimitsController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\WebhooksController;
-use App\Http\Controllers\MetricsController;
+use App\Http\Controllers\SoketiMetricsController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -23,7 +23,7 @@ use Inertia\Inertia;
 
 Route::get('/', fn () => redirect('/login'));
 
-Route::webhooks('webhooks');
+// Webhook routes removed - using direct metrics scraping instead
 
 Route::middleware(['auth', 'verified'])->prefix('apps')->name('apps.')->group(function () {
     Route::get('/', [AppsController::class, 'index'])->name('index');
@@ -31,14 +31,15 @@ Route::middleware(['auth', 'verified'])->prefix('apps')->name('apps.')->group(fu
 
     Route::prefix('{app}')->group(function () {
         Route::get('debug', [DebugController::class, 'index'])->name('debug');
-        Route::post('toggle-debug', [WebhooksController::class, 'toggleDebuggingWebhook'])->name('toggle-debug');
+// Debug webhook toggle removed - using direct metrics instead
 
-        // ───────────────────────────────────────── Webhook-based Metrics
-        Route::get('metrics', [MetricsController::class, 'page'])->name('metrics');
+        // ───────────────────────────────────────── Soketi Metrics (Direct Scraping)
+        Route::get('metrics', [SoketiMetricsController::class, 'page'])->name('metrics');
         Route::prefix('metrics')->name('metrics.')->group(function () {
-            Route::get('cached', [MetricsController::class, 'getCachedMetrics'])->name('cached');
-            Route::get('timeseries', [MetricsController::class, 'getTimeSeriesData'])->name('timeseries');
-            Route::post('webhook', [MetricsController::class, 'webhook'])->name('webhook')->withoutMiddleware(['auth', 'verified']);
+            Route::get('cached', [SoketiMetricsController::class, 'getCachedMetrics'])->name('cached');
+            Route::get('timeseries', [SoketiMetricsController::class, 'getTimeSeriesData'])->name('timeseries');
+            Route::get('health', [SoketiMetricsController::class, 'getSoketiHealth'])->name('health');
+            Route::post('refresh', [SoketiMetricsController::class, 'refreshMetrics'])->name('refresh');
         });
 
         Route::prefix('webhooks')->name('webhooks.')->group(function () {
