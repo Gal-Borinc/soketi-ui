@@ -73,6 +73,7 @@ class MetricsController extends Controller
             ],
             'client_events' => $this->getClientEventsCounts($app->id),
             'channels' => $this->getChannelMetrics($app->id),
+            'upload_metrics' => $this->getUploadMetrics($app->id),
             'last_updated' => Cache::get("{$cachePrefix}:last_updated"),
         ]);
     }
@@ -152,6 +153,7 @@ class MetricsController extends Controller
                 $dataSize = strlen(json_encode($event['data'] ?? ''));
                 $this->addToCacheMetric("{$cachePrefix}:bytes_transferred", $dataSize, $ttl);
                 $this->recordClientEvent($event, $appId, $timestamp);
+                $this->trackUploadEvents($event, $appId, $timestamp);
                 break;
                 
             case 'subscription_count':
@@ -218,13 +220,12 @@ class MetricsController extends Controller
     private function getClientEventsCounts(string $appId): array
     {
         $cachePrefix = "metrics:realtime:app:{$appId}";
-        $pattern = "{$cachePrefix}:client_events:*";
         
-        // Get all client event keys (this is simplified - in production you'd want to track event types)
         return [
-            'upload_progress' => (int) Cache::get("{$cachePrefix}:client_events:upload_progress", 0),
-            'upload_complete' => (int) Cache::get("{$cachePrefix}:client_events:upload_complete", 0),
-            'upload_error' => (int) Cache::get("{$cachePrefix}:client_events:upload_error", 0),
+            'chunked-upload.prepared' => (int) Cache::get("{$cachePrefix}:client_events:.chunked-upload.prepared", 0),
+            'chunked-upload.completed' => (int) Cache::get("{$cachePrefix}:client_events:.chunked-upload.completed", 0),
+            'chunked-upload.failed' => (int) Cache::get("{$cachePrefix}:client_events:.chunked-upload.failed", 0),
+            'other' => (int) Cache::get("{$cachePrefix}:client_events:other", 0),
         ];
     }
     
@@ -296,5 +297,120 @@ class MetricsController extends Controller
         }
         
         return $data;
+    }
+    
+    private function trackUploadEvents(array $event, string $appId, Carbon $timestamp): void
+    {
+        $eventName = $event['event'] ?? '';
+        $cachePrefix = "metrics:realtime:app:{$appId}";
+        
+        // Track upload-specific events
+        if (str_contains($eventName, 'chunked-upload')) {
+            $uploadId = null;
+            
+            // Try to extract upload ID from event data
+            if (isset($event['data'])) {
+                $data = is_string($event['data']) ? json_decode($event['data'], true) : $event['data'];
+                $uploadId = $data['uploadId'] ?? null;
+            }
+            
+            if ($eventName === '.chunked-upload.prepared') {
+                // Track upload preparation
+                $this->incrementCacheMetric("{$cachePrefix}:uploads:prepared", $this->defaultCacheTtl);
+                $this->recordCacheEvent("{$cachePrefix}:uploads:events:prepared", $timestamp);
+                
+                if ($uploadId) {
+                    // Store preparation time for this upload
+                    Cache::put("{$cachePrefix}:upload:{$uploadId}:prepared_at", $timestamp->timestamp, 7200); // 2 hours TTL
+                }
+            } elseif ($eventName === '.chunked-upload.completed') {
+                // Track upload completion
+                $this->incrementCacheMetric("{$cachePrefix}:uploads:completed", $this->defaultCacheTtl);
+                $this->recordCacheEvent("{$cachePrefix}:uploads:events:completed", $timestamp);
+                
+                if ($uploadId) {
+                    // Calculate upload duration if we have the preparation time
+                    $preparedAt = Cache::get("{$cachePrefix}:upload:{$uploadId}:prepared_at");
+                    if ($preparedAt) {
+                        $duration = $timestamp->timestamp - $preparedAt;
+                        $this->recordUploadDuration($appId, $duration);
+                        Cache::forget("{$cachePrefix}:upload:{$uploadId}:prepared_at");
+                    }
+                }
+            } elseif ($eventName === '.chunked-upload.failed') {
+                // Track upload failures
+                $this->incrementCacheMetric("{$cachePrefix}:uploads:failed", $this->defaultCacheTtl);
+                $this->recordCacheEvent("{$cachePrefix}:uploads:events:failed", $timestamp);
+                
+                if ($uploadId) {
+                    Cache::forget("{$cachePrefix}:upload:{$uploadId}:prepared_at");
+                }
+            }
+        }
+    }
+    
+    private function recordUploadDuration(string $appId, int $durationSeconds): void
+    {
+        $cachePrefix = "metrics:realtime:app:{$appId}";
+        
+        // Update average upload duration
+        $totalDuration = (int) Cache::get("{$cachePrefix}:uploads:total_duration", 0);
+        $uploadCount = (int) Cache::get("{$cachePrefix}:uploads:duration_count", 0);
+        
+        Cache::put("{$cachePrefix}:uploads:total_duration", $totalDuration + $durationSeconds, $this->defaultCacheTtl);
+        Cache::put("{$cachePrefix}:uploads:duration_count", $uploadCount + 1, $this->defaultCacheTtl);
+        
+        // Track duration buckets for histogram
+        $bucket = $this->getDurationBucket($durationSeconds);
+        $bucketKey = "{$cachePrefix}:uploads:duration_bucket:{$bucket}";
+        $this->incrementCacheMetric($bucketKey, $this->defaultCacheTtl);
+    }
+    
+    private function getDurationBucket(int $seconds): string
+    {
+        if ($seconds < 10) return '0-10s';
+        if ($seconds < 30) return '10-30s';
+        if ($seconds < 60) return '30-60s';
+        if ($seconds < 120) return '1-2m';
+        if ($seconds < 300) return '2-5m';
+        return '5m+';
+    }
+    
+    private function getUploadMetrics(string $appId): array
+    {
+        $cachePrefix = "metrics:realtime:app:{$appId}";
+        
+        $prepared = (int) Cache::get("{$cachePrefix}:uploads:prepared", 0);
+        $completed = (int) Cache::get("{$cachePrefix}:uploads:completed", 0);
+        $failed = (int) Cache::get("{$cachePrefix}:uploads:failed", 0);
+        
+        $totalDuration = (int) Cache::get("{$cachePrefix}:uploads:total_duration", 0);
+        $durationCount = (int) Cache::get("{$cachePrefix}:uploads:duration_count", 0);
+        $avgDuration = $durationCount > 0 ? round($totalDuration / $durationCount) : 0;
+        
+        // Calculate active uploads (prepared but not yet completed/failed)
+        $activeUploads = max(0, $prepared - $completed - $failed);
+        
+        return [
+            'active_uploads' => $activeUploads,
+            'total_prepared' => $prepared,
+            'total_completed' => $completed,
+            'total_failed' => $failed,
+            'completion_rate' => $prepared > 0 ? round(($completed / $prepared) * 100, 2) : 0,
+            'average_duration_seconds' => $avgDuration,
+            'duration_buckets' => [
+                '0-10s' => (int) Cache::get("{$cachePrefix}:uploads:duration_bucket:0-10s", 0),
+                '10-30s' => (int) Cache::get("{$cachePrefix}:uploads:duration_bucket:10-30s", 0),
+                '30-60s' => (int) Cache::get("{$cachePrefix}:uploads:duration_bucket:30-60s", 0),
+                '1-2m' => (int) Cache::get("{$cachePrefix}:uploads:duration_bucket:1-2m", 0),
+                '2-5m' => (int) Cache::get("{$cachePrefix}:uploads:duration_bucket:2-5m", 0),
+                '5m+' => (int) Cache::get("{$cachePrefix}:uploads:duration_bucket:5m+", 0),
+            ],
+            'events' => [
+                'prepared_last_hour' => (int) Cache::get("{$cachePrefix}:uploads:events:prepared:hour:" . Carbon::now()->format('Y-m-d-H'), 0),
+                'completed_last_hour' => (int) Cache::get("{$cachePrefix}:uploads:events:completed:hour:" . Carbon::now()->format('Y-m-d-H'), 0),
+                'failed_last_hour' => (int) Cache::get("{$cachePrefix}:uploads:events:failed:hour:" . Carbon::now()->format('Y-m-d-H'), 0),
+            ],
+        ];
     }
 }

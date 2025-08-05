@@ -16,6 +16,18 @@ function fmt(val, type = 'number', digits = 2) {
         return n.toFixed(digits) + ' B';
     }
 
+    // Format duration
+    if (type === 'duration') {
+        if (n >= 3600) return (n / 3600).toFixed(1) + 'h';
+        if (n >= 60) return (n / 60).toFixed(1) + 'm';
+        return n.toFixed(0) + 's';
+    }
+
+    // Format percentage
+    if (type === 'percentage') {
+        return n.toFixed(digits) + '%';
+    }
+
     // Format general numbers
     if (n >= 1e9) return (n / 1e9).toFixed(digits) + 'G';
     if (n >= 1e6) return (n / 1e6).toFixed(digits) + 'M';
@@ -287,6 +299,7 @@ export default function WebhookMetrics(props) {
     const connectionEvents = metrics.connection_events || {};
     const disconnectionEvents = metrics.disconnection_events || {};
     const clientEvents = metrics.client_events || {};
+    const uploadMetrics = metrics.upload_metrics || {};
 
     return (
         <AuthenticatedLayout
@@ -344,8 +357,8 @@ export default function WebhookMetrics(props) {
                             lastUpdate={cachedMetrics.lastUpdate}
                         />
                         <StatCard
-                            title="Upload Events"
-                            value={clientEvents.upload_complete || 0}
+                            title="Active Uploads"
+                            value={uploadMetrics.active_uploads || 0}
                             loading={cachedMetrics.loading}
                             error={cachedMetrics.error}
                             lastUpdate={cachedMetrics.lastUpdate}
@@ -380,23 +393,104 @@ export default function WebhookMetrics(props) {
                         />
                     </div>
 
-                    {/* Upload-specific Events */}
+                    {/* Upload Metrics Section */}
+                    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+                        <h3 className="text-lg font-medium mb-4">Upload Metrics</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                            <StatCard
+                                title="Total Prepared"
+                                value={uploadMetrics.total_prepared || 0}
+                                loading={cachedMetrics.loading}
+                                error={cachedMetrics.error}
+                            />
+                            <StatCard
+                                title="Total Completed"
+                                value={uploadMetrics.total_completed || 0}
+                                loading={cachedMetrics.loading}
+                                error={cachedMetrics.error}
+                            />
+                            <StatCard
+                                title="Total Failed"
+                                value={uploadMetrics.total_failed || 0}
+                                loading={cachedMetrics.loading}
+                                error={cachedMetrics.error}
+                            />
+                            <StatCard
+                                title="Completion Rate"
+                                value={uploadMetrics.completion_rate || 0}
+                                type="percentage"
+                                loading={cachedMetrics.loading}
+                                error={cachedMetrics.error}
+                            />
+                        </div>
+                        
+                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <StatCard
+                                title="Average Upload Duration"
+                                value={uploadMetrics.average_duration_seconds || 0}
+                                type="duration"
+                                loading={cachedMetrics.loading}
+                                error={cachedMetrics.error}
+                            />
+                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                                <div className="text-sm text-gray-500 mb-2">Upload Duration Distribution</div>
+                                <div className="space-y-1">
+                                    {uploadMetrics.duration_buckets && Object.entries(uploadMetrics.duration_buckets).map(([bucket, count]) => (
+                                        <div key={bucket} className="flex justify-between text-sm">
+                                            <span className="text-gray-600">{bucket}:</span>
+                                            <span className="font-medium">{count}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Upload Events (Last Hour) */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <StatCard
-                            title="Upload Progress Events"
-                            value={clientEvents.upload_progress || 0}
+                            title="Uploads Prepared (Last Hour)"
+                            value={uploadMetrics.events?.prepared_last_hour || 0}
                             loading={cachedMetrics.loading}
                             error={cachedMetrics.error}
                         />
                         <StatCard
-                            title="Upload Completions"
-                            value={clientEvents.upload_complete || 0}
+                            title="Uploads Completed (Last Hour)"
+                            value={uploadMetrics.events?.completed_last_hour || 0}
                             loading={cachedMetrics.loading}
                             error={cachedMetrics.error}
                         />
                         <StatCard
-                            title="Upload Errors"
-                            value={clientEvents.upload_error || 0}
+                            title="Uploads Failed (Last Hour)"
+                            value={uploadMetrics.events?.failed_last_hour || 0}
+                            loading={cachedMetrics.loading}
+                            error={cachedMetrics.error}
+                        />
+                    </div>
+
+                    {/* Client Events */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <StatCard
+                            title="Upload Prepared Events"
+                            value={clientEvents['chunked-upload.prepared'] || 0}
+                            loading={cachedMetrics.loading}
+                            error={cachedMetrics.error}
+                        />
+                        <StatCard
+                            title="Upload Completed Events"
+                            value={clientEvents['chunked-upload.completed'] || 0}
+                            loading={cachedMetrics.loading}
+                            error={cachedMetrics.error}
+                        />
+                        <StatCard
+                            title="Upload Failed Events"
+                            value={clientEvents['chunked-upload.failed'] || 0}
+                            loading={cachedMetrics.loading}
+                            error={cachedMetrics.error}
+                        />
+                        <StatCard
+                            title="Other Client Events"
+                            value={clientEvents.other || 0}
                             loading={cachedMetrics.loading}
                             error={cachedMetrics.error}
                         />
