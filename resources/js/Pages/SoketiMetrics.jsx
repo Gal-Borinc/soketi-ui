@@ -40,13 +40,16 @@ function fmt(val, type = 'number', digits = 2) {
     return n.toFixed(digits);
 }
 
-// Enhanced fetch with better error handling
+// Enhanced fetch with better error handling and CSRF token
 async function fetchJSON(url, options = {}) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
     const res = await fetch(url, {
         credentials: 'include',
         headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
+            'X-CSRF-TOKEN': csrfToken,
             ...options.headers
         },
         ...options
