@@ -21,14 +21,16 @@ RUN cd /src && composer install --no-dev --no-scripts
 FROM node:18 as modules
 
 ADD /package.json /src/package.json
-ADD /yarn.lock /src/yarn.lock
+ADD /package-lock.json* /src/
+ADD /yarn.lock* /src/
 
-RUN cd /src && yarn
+RUN cd /src && npm install
 
 FROM node:18 as build
 
 ADD /package.json /src/package.json
-ADD /yarn.lock /src/yarn.lock
+ADD /package-lock.json* /src/
+ADD /yarn.lock* /src/
 
 COPY --from=modules /src/node_modules /src/node_modules
 
@@ -39,7 +41,7 @@ ADD /postcss.config.js /src/postcss.config.js
 ADD /tailwind.config.js /src/tailwind.config.js
 ADD /vite.config.mjs /src/vite.config.mjs
 
-RUN cd /src && yarn build
+RUN cd /src && npm run build
 
 FROM jkaninda/nginx-php-fpm:8.2
 
@@ -69,3 +71,36 @@ RUN chown -R 1000:1000 /var/www/html
 
 # Set working directory
 WORKDIR /var/www/html
+
+# Install cron
+RUN apt-get update && apt-get install -y cron
+
+# Add cron job for metrics scraping
+RUN echo "* * * * * cd /var/www/html && php artisan soketi:scrape-metrics >/dev/null 2>&1" > /etc/cron.d/soketi-scraper
+RUN echo "* * * * * cd /var/www/html && sleep 10 && php artisan soketi:scrape-metrics >/dev/null 2>&1" >> /etc/cron.d/soketi-scraper  
+RUN echo "* * * * * cd /var/www/html && sleep 20 && php artisan soketi:scrape-metrics >/dev/null 2>&1" >> /etc/cron.d/soketi-scraper
+RUN echo "* * * * * cd /var/www/html && sleep 30 && php artisan soketi:scrape-metrics >/dev/null 2>&1" >> /etc/cron.d/soketi-scraper
+RUN echo "* * * * * cd /var/www/html && sleep 40 && php artisan soketi:scrape-metrics >/dev/null 2>&1" >> /etc/cron.d/soketi-scraper
+RUN echo "* * * * * cd /var/www/html && sleep 50 && php artisan soketi:scrape-metrics >/dev/null 2>&1" >> /etc/cron.d/soketi-scraper
+
+# Laravel scheduler for hourly aggregation
+RUN echo "* * * * * cd /var/www/html && php artisan schedule:run >/dev/null 2>&1" >> /etc/cron.d/soketi-scraper
+
+# Set permissions for cron
+RUN chmod 0644 /etc/cron.d/soketi-scraper
+RUN crontab /etc/cron.d/soketi-scraper
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+# Run database migrations on startup\n\
+php artisan migrate --force\n\
+\n\
+# Start cron daemon\n\
+service cron start\n\
+\n\
+# Start the original container process\n\
+exec "$@"' > /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
