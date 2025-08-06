@@ -361,9 +361,6 @@ export default function SoketiMetrics(props) {
                         <h1 className="text-2xl font-bold text-gray-900">
                             Soketi WebSocket Metrics
                         </h1>
-                        <p className="text-gray-600 mt-1">
-                            Real-time WebSocket server monitoring for {app.name || `App ${app.id}`}
-                        </p>
                     </div>
                     <div className="flex items-center space-x-4">
                         <StatusIndicator 
