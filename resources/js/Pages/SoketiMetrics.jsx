@@ -326,6 +326,11 @@ export default function SoketiMetrics(props) {
         }
     }, [healthEndpoint]);
 
+    // Handle refresh for health check
+    const handleRefresh = useCallback(() => {
+        fetchHealth();
+    }, [fetchHealth]);
+
     useEffect(() => {
         fetchHealth();
         const interval = setInterval(fetchHealth, 30000);
