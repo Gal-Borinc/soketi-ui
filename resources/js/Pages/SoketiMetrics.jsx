@@ -80,6 +80,7 @@ function useCachedMetrics(endpoint, refreshInterval = 5000, enabled = true) {
         try {
             setError(null);
             const result = await fetchJSON(endpoint);
+            console.log('Fetched cached metrics:', result);
             setData(result);
             setLastUpdate(new Date().toISOString());
         } catch (err) {
