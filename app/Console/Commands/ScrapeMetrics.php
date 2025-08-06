@@ -261,57 +261,77 @@ class ScrapeMetrics extends Command
             $currentRawMetrics[$name] = $value;
             
             switch ($name) {
-                case 'soketi_6001_connected':
+                case 'soketi_connected':
                     // This is a gauge (current value), not a counter
-                    $processed['connections']['current'] = (int) $value;
+                    if (isset($labels['port']) && $labels['port'] === '6001') {
+                        $processed['connections']['current'] = (int) $value;
+                    }
                     break;
                     
-                case 'soketi_6001_new_connections_total':
+                case 'soketi_new_connections_total':
                     // This is a counter - store total and calculate delta
-                    $processed['connections']['total_new'] = (int) $value;
-                    $previousValue = $previousMetrics[$name] ?? 0;
-                    $processed['connections']['new_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    if (isset($labels['port']) && $labels['port'] === '6001') {
+                        $processed['connections']['total_new'] = (int) $value;
+                        $previousValue = $previousMetrics[$name] ?? 0;
+                        $processed['connections']['new_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    }
                     break;
                     
-                case 'soketi_6001_new_disconnections_total':
+                case 'soketi_new_disconnections_total':
                     // This is a counter - store total and calculate delta
-                    $processed['connections']['total_disconnections'] = (int) $value;
-                    $previousValue = $previousMetrics[$name] ?? 0;
-                    $processed['connections']['disconnections_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    if (isset($labels['port']) && $labels['port'] === '6001') {
+                        $processed['connections']['total_disconnections'] = (int) $value;
+                        $previousValue = $previousMetrics[$name] ?? 0;
+                        $processed['connections']['disconnections_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    }
                     break;
                     
-                case 'soketi_6001_socket_received_bytes':
+                case 'soketi_socket_received_bytes':
                     // This is a counter - store total and calculate delta
-                    $processed['data_transfer']['bytes_received'] = (int) $value;
-                    $previousValue = $previousMetrics[$name] ?? 0;
-                    $processed['data_transfer']['bytes_received_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    if (isset($labels['port']) && $labels['port'] === '6001') {
+                        $processed['data_transfer']['bytes_received'] = (int) $value;
+                        $previousValue = $previousMetrics[$name] ?? 0;
+                        $processed['data_transfer']['bytes_received_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    }
                     break;
                     
-                case 'soketi_6001_socket_sent_bytes':
+                case 'soketi_socket_transmitted_bytes':
                     // This is a counter - store total and calculate delta
-                    $processed['data_transfer']['bytes_sent'] = (int) $value;
-                    $previousValue = $previousMetrics[$name] ?? 0;
-                    $processed['data_transfer']['bytes_sent_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    if (isset($labels['port']) && $labels['port'] === '6001') {
+                        $processed['data_transfer']['bytes_sent'] = (int) $value;
+                        $previousValue = $previousMetrics[$name] ?? 0;
+                        $processed['data_transfer']['bytes_sent_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    }
                     break;
                     
                 case 'soketi_ws_messages_sent_total':
                     // This is a counter - store total and calculate delta
-                    $processed['websockets']['messages_sent'] = (int) $value;
-                    $previousValue = $previousMetrics[$name] ?? 0;
-                    $processed['websockets']['messages_sent_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    if (isset($labels['port']) && $labels['port'] === '6001') {
+                        $processed['websockets']['messages_sent'] = (int) $value;
+                        $previousValue = $previousMetrics[$name] ?? 0;
+                        $processed['websockets']['messages_sent_since_last_scrape'] = max(0, (int) $value - $previousValue);
+                    }
                     break;
                     
                 // Node.js process metrics
-                case 'nodejs_heap_size_used_bytes':
-                    $processed['system']['memory_usage'] = (int) $value;
+                case 'soketi_nodejs_heap_size_used_bytes':
+                    if (isset($labels['port']) && $labels['port'] === '6001') {
+                        $processed['system']['memory_usage'] = (int) $value;
+                    }
                     break;
                     
-                case 'process_cpu_usage_percentage':
-                    $processed['system']['cpu_usage'] = $value;
+                case 'soketi_process_cpu_seconds_total':
+                    if (isset($labels['port']) && $labels['port'] === '6001') {
+                        // Convert total CPU seconds to a percentage (rough approximation)
+                        $processed['system']['cpu_usage'] = $value;
+                    }
                     break;
                     
-                case 'nodejs_version_info':
-                    // Store Node.js version info if needed
+                case 'soketi_process_start_time_seconds':
+                    if (isset($labels['port']) && $labels['port'] === '6001') {
+                        // Calculate uptime
+                        $processed['system']['uptime'] = time() - (int) $value;
+                    }
                     break;
             }
         }
