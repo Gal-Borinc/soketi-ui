@@ -44,12 +44,17 @@ function fmt(val, type = 'number', digits = 2) {
 async function fetchJSON(url, options = {}) {
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
     
+    if (!csrfToken) {
+        console.error('CSRF token not found in meta tag');
+    }
+    
     const res = await fetch(url, {
         credentials: 'include',
         headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken,
+            'X-CSRF-TOKEN': csrfToken || '',
+            'X-Requested-With': 'XMLHttpRequest',
             ...options.headers
         },
         ...options
