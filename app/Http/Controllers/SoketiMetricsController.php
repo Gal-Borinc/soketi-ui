@@ -19,7 +19,9 @@ class SoketiMetricsController extends Controller
 
     public function __construct()
     {
-        $this->soketiHost = env('SOKETI_HOST', 'http://soketi');
+        $host = env('SOKETI_HOST', 'soketi');
+        // Add http:// prefix if not present
+        $this->soketiHost = str_starts_with($host, 'http') ? $host : "http://{$host}";
         $this->metricsPort = env('SOKETI_METRICS_PORT', 9601);
     }
 

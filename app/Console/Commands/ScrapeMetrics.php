@@ -33,7 +33,9 @@ class ScrapeMetrics extends Command
         parent::__construct();
         
         // Get Soketi configuration from environment or defaults
-        $this->soketiHost = env('SOKETI_HOST', 'http://soketi');
+        $host = env('SOKETI_HOST', 'soketi');
+        // Add http:// prefix if not present
+        $this->soketiHost = str_starts_with($host, 'http') ? $host : "http://{$host}";
         $this->metricsPort = env('SOKETI_METRICS_PORT', 9601);
     }
 
