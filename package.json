@@ -21,6 +21,8 @@
         "vite": "^5.0.10"
     },
     "dependencies": {
-        "pusher-js": "^8.4.0-rc2"
+        "pusher-js": "^8.4.0-rc2",
+        "recharts": "^2.8.0",
+        "date-fns": "^3.0.0"
     }
 }

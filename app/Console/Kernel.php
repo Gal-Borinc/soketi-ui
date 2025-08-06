@@ -15,11 +15,13 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // Scrape Soketi metrics every 10 seconds for real-time monitoring
-        $schedule->command('soketi:scrape-metrics')
-                 ->everyTenSeconds()
-                 ->withoutOverlapping()
-                 ->runInBackground();
+        // Metrics scraping is handled by external cron job running every 10 seconds
+        
+        // Aggregate hourly metrics at 5 minutes past the hour
+        $schedule->command('metrics:aggregate-hourly')
+            ->hourlyAt(5)
+            ->withoutOverlapping()
+            ->runInBackground();
     }
 
     /**

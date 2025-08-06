@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use App\Jobs\ProcessScrapedMetrics;
+use App\Services\UploadMetricsTracker;
 
 class ScrapeMetrics extends Command
 {
@@ -196,6 +197,11 @@ class ScrapeMetrics extends Command
         // Process key metrics for easy access
         $processedMetrics = $this->extractKeyMetrics($prometheusMetrics, $usageMetrics);
         
+        // Get upload metrics from tracker service
+        $uploadTracker = app(UploadMetricsTracker::class);
+        $uploadMetrics = $uploadTracker->getRealtimeMetrics();
+        $processedMetrics['upload_events'] = $uploadMetrics;
+        
         // Store processed metrics with timestamp
         $processedMetrics['scraped_at'] = $timestamp->toISOString();
         $processedMetrics['scraped_timestamp'] = $timestamp->timestamp;
@@ -205,7 +211,7 @@ class ScrapeMetrics extends Command
         // Store time-series data for charts
         $this->storeTimeSeriesData($processedMetrics, $timestamp);
         
-        $this->line("Stored processed metrics in cache");
+        $this->line("Stored processed metrics in cache with upload event data");
     }
     
     /**

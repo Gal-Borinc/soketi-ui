@@ -10,20 +10,20 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
-use App\Services\UploadMetricsService;
+use App\Services\UploadMetricsTracker;
 
 class ProcessScrapedMetrics implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     private int $cacheTtl = 600; // 10 minutes
-    private UploadMetricsService $uploadMetricsService;
+    private UploadMetricsTracker $uploadMetricsTracker;
     
     public function __construct()
     {
         // Job configuration
         $this->onQueue('metrics');
-        $this->uploadMetricsService = app(UploadMetricsService::class);
+        $this->uploadMetricsTracker = app(UploadMetricsTracker::class);
     }
 
     /**
@@ -41,21 +41,21 @@ class ProcessScrapedMetrics implements ShouldQueue
                 return;
             }
             
-            // Derive upload-specific metrics from connection patterns
-            $uploadMetrics = $this->deriveUploadMetrics($processedMetrics, $timestamp);
+            // Get upload metrics from tracking service
+            $uploadMetrics = $this->uploadMetricsTracker->getRealtimeMetrics();
+            
+            // Get hourly metrics for charts
+            $hourlyMetrics = $this->uploadMetricsTracker->getHourlyMetrics(24);
             
             // Store enhanced metrics for API consumption
             $enhancedMetrics = array_merge($processedMetrics, [
                 'upload_metrics' => $uploadMetrics,
+                'upload_hourly' => $hourlyMetrics,
                 'processed_at' => $timestamp->toISOString(),
                 'processed_timestamp' => $timestamp->timestamp
             ]);
             
             Cache::put('soketi:enhanced_metrics', $enhancedMetrics, $this->cacheTtl);
-            
-            // Get upload metrics from tracking service
-            $uploadMetrics = $this->uploadMetricsService->getUploadMetrics();
-            $enhancedMetrics['upload_metrics'] = $uploadMetrics;
             
             // Update real-time metrics cache (for backwards compatibility with existing API)
             $this->updateRealtimeMetricsCache($enhancedMetrics, $timestamp);
@@ -237,19 +237,19 @@ class ProcessScrapedMetrics implements ShouldQueue
                 'last_minute' => $this->getMinuteCount('disconnections', $timestamp),
             ],
             'client_events' => [
-                'chunked-upload.prepared' => 0, // These will be populated when we add upload correlation
-                'chunked-upload.completed' => 0,
-                'chunked-upload.failed' => 0,
+                'chunked-upload.prepared' => $uploadMetrics['last_hour']['prepared'] ?? 0,
+                'chunked-upload.completed' => $uploadMetrics['last_hour']['completed'] ?? 0,
+                'chunked-upload.failed' => $uploadMetrics['last_hour']['failed'] ?? 0,
                 'other' => 0,
             ],
             'upload_metrics' => [
-                'active_uploads' => $uploadMetrics['active_sessions'] ?? 0,
-                'total_prepared' => 0, // Will be populated with upload correlation
-                'total_completed' => 0,
-                'total_failed' => 0,
-                'completion_rate' => 0,
-                'average_duration_seconds' => $uploadMetrics['avg_session_duration'] ?? 0,
-                'duration_buckets' => [
+                'active_uploads' => $uploadMetrics['active_uploads'] ?? 0,
+                'total_prepared' => $uploadMetrics['last_24_hours']['prepared'] ?? 0,
+                'total_completed' => $uploadMetrics['last_24_hours']['completed'] ?? 0,
+                'total_failed' => $uploadMetrics['last_24_hours']['failed'] ?? 0,
+                'completion_rate' => $uploadMetrics['last_24_hours']['completion_rate'] ?? 0,
+                'average_duration_seconds' => $uploadMetrics['last_hour']['avg_duration'] ?? 0,
+                'duration_buckets' => $uploadMetrics['duration_distribution'] ?? [
                     '0-10s' => 0,
                     '10-30s' => 0,
                     '30-60s' => 0,
@@ -258,10 +258,13 @@ class ProcessScrapedMetrics implements ShouldQueue
                     '5m+' => 0,
                 ],
                 'events' => [
-                    'prepared_last_hour' => 0,
-                    'completed_last_hour' => 0,
-                    'failed_last_hour' => 0,
+                    'prepared_last_hour' => $uploadMetrics['last_hour']['prepared'] ?? 0,
+                    'completed_last_hour' => $uploadMetrics['last_hour']['completed'] ?? 0,
+                    'failed_last_hour' => $uploadMetrics['last_hour']['failed'] ?? 0,
                 ],
+                'error_distribution' => $uploadMetrics['error_distribution'] ?? [],
+                'avg_speed' => $uploadMetrics['last_hour']['avg_speed'] ?? 0,
+                'total_bytes' => $uploadMetrics['last_hour']['total_bytes'] ?? 0,
             ],
             'channels' => [
                 'total_occupied' => $connections['current'] ?? 0,
