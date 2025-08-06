@@ -31,9 +31,10 @@ function formatValue(val, type = 'number', precision = 2) {
             return `${n.toFixed(precision)} B`;
         
         case 'duration':
+            // Display as hours/minutes without trailing seconds "s"
             if (n >= 3600) return `${(n / 3600).toFixed(1)}h`;
             if (n >= 60) return `${(n / 60).toFixed(1)}m`;
-            return `${n.toFixed(0)}s`;
+            return `${n.toFixed(0)}`; // remove 's'
         
         case 'percentage':
             return `${n.toFixed(precision)}%`;
@@ -209,12 +210,14 @@ function MessageChart({ data }) {
 
     return (
         <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
+            <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
                 <Pie
                     data={data}
                     cx="50%"
                     cy="50%"
-                    outerRadius={80}
+                    innerRadius={50}
+                    outerRadius={100}
+                    paddingAngle={2}
                     dataKey="value"
                     label={({ name, value }) => `${name}: ${value}`}
                 >
@@ -306,7 +309,6 @@ export default function SoketiMetrics(props) {
     // API endpoints
     const base = `/apps/${app.id}/metrics`;
     const metricsEndpoint = `${base}/cached`;
-    const timeseriesEndpoint = `${base}/timeseries`;
     const healthEndpoint = `${base}/health`;
 
     // Hooks
@@ -324,17 +326,6 @@ export default function SoketiMetrics(props) {
         }
     }, [healthEndpoint]);
 
-    // Manual refresh
-    const handleRefresh = useCallback(async () => {
-        try {
-            await fetchJSON(`${base}/refresh`, { method: 'POST' });
-            metrics.refetch();
-            fetchHealth();
-        } catch (err) {
-            console.error('Refresh failed:', err);
-        }
-    }, [base, metrics, fetchHealth]);
-
     useEffect(() => {
         fetchHealth();
         const interval = setInterval(fetchHealth, 30000);
@@ -348,26 +339,6 @@ export default function SoketiMetrics(props) {
     const websockets = data.websockets || {};
     const system = data.system || {};
     const performance = data.performance || {};
-
-    // Fetch real timeseries data
-    const [timeSeriesData, setTimeSeriesData] = useState([]);
-    
-    const fetchTimeSeriesData = useCallback(async () => {
-        try {
-            const response = await fetchJSON(timeseriesEndpoint);
-            if (response && response.data) {
-                setTimeSeriesData(response.data);
-            }
-        } catch (err) {
-            console.error('Failed to fetch timeseries data:', err);
-        }
-    }, [timeseriesEndpoint]);
-    
-    useEffect(() => {
-        fetchTimeSeriesData();
-        const interval = setInterval(fetchTimeSeriesData, refreshInterval);
-        return () => clearInterval(interval);
-    }, [fetchTimeSeriesData, refreshInterval]);
 
     const messageTypeData = [
         { name: 'WebSocket Messages', value: websockets.messages_sent || 0, color: COLORS.primary },
@@ -397,12 +368,6 @@ export default function SoketiMetrics(props) {
                             isLive={metrics.isLive}
                             onToggle={metrics.toggleLive}
                         />
-                        <button
-                            onClick={handleRefresh}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                            Refresh All
-                        </button>
                     </div>
                 </div>
             }
@@ -449,49 +414,10 @@ export default function SoketiMetrics(props) {
                         />
                     </div>
 
-                    {/* Charts Row */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Connection Activity */}
-                        <ChartCard title="Connection Activity" className="lg:col-span-2">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={timeSeriesData}>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                                    <XAxis 
-                                        dataKey="timestamp" 
-                                        axisLine={false}
-                                        tickLine={false}
-                                        tick={{ fontSize: 12, fill: '#666' }}
-                                    />
-                                    <YAxis 
-                                        axisLine={false}
-                                        tickLine={false}
-                                        tick={{ fontSize: 12, fill: '#666' }}
-                                    />
-                                    <Tooltip 
-                                        contentStyle={{ 
-                                            backgroundColor: '#fff',
-                                            border: '1px solid #e5e7eb',
-                                            borderRadius: '8px'
-                                        }}
-                                    />
-                                    <Area 
-                                        type="monotone" 
-                                        dataKey="connections" 
-                                        fill={COLORS.primary} 
-                                        fillOpacity={0.1}
-                                        stroke={COLORS.primary}
-                                        strokeWidth={2}
-                                        name="Connections"
-                                    />
-                                </ComposedChart>
-                            </ResponsiveContainer>
-                        </ChartCard>
-
-                        {/* Message Distribution */}
-                        <ChartCard title="Message Types">
-                            <MessageChart data={messageTypeData} />
-                        </ChartCard>
-                    </div>
+                    {/* Message Types only, full width and taller to avoid clipping */}
+                    <ChartCard title="Message Types" height={360}>
+                        <MessageChart data={messageTypeData} />
+                    </ChartCard>
 
                     {/* Performance Metrics */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -521,43 +447,6 @@ export default function SoketiMetrics(props) {
                             subtitle="Connection success rate"
                         />
                     </div>
-
-                    {/* Data Transfer Chart */}
-                    <ChartCard title="Data Transfer Rate" height={250}>
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={timeSeriesData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                                <XAxis 
-                                    dataKey="timestamp" 
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fontSize: 12, fill: '#666' }}
-                                />
-                                <YAxis 
-                                    axisLine={false}
-                                    tickLine={false}
-                                    tick={{ fontSize: 12, fill: '#666' }}
-                                    tickFormatter={(value) => formatValue(value, 'bytes')}
-                                />
-                                <Tooltip 
-                                    contentStyle={{ 
-                                        backgroundColor: '#fff',
-                                        border: '1px solid #e5e7eb',
-                                        borderRadius: '8px'
-                                    }}
-                                    formatter={(value) => [formatValue(value, 'bytes'), 'Data Transfer']}
-                                />
-                                <Line 
-                                    type="monotone" 
-                                    dataKey="bytes" 
-                                    stroke={COLORS.accent}
-                                    strokeWidth={3}
-                                    dot={false}
-                                    activeDot={{ r: 6, fill: COLORS.accent }}
-                                />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </ChartCard>
                 </div>
             </div>
         </AuthenticatedLayout>
