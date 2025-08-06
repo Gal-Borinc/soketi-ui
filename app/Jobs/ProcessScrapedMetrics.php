@@ -10,20 +10,17 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
-use App\Services\UploadMetricsTracker;
 
 class ProcessScrapedMetrics implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     private int $cacheTtl = 600; // 10 minutes
-    private UploadMetricsTracker $uploadMetricsTracker;
     
     public function __construct()
     {
         // Job configuration
         $this->onQueue('metrics');
-        $this->uploadMetricsTracker = app(UploadMetricsTracker::class);
     }
 
     /**
@@ -41,18 +38,11 @@ class ProcessScrapedMetrics implements ShouldQueue
                 return;
             }
             
-            // Get upload metrics from tracking service
-            $uploadMetrics = $this->uploadMetricsTracker->getRealtimeMetrics();
-            
-            // Get hourly metrics for charts
-            $hourlyMetrics = $this->uploadMetricsTracker->getHourlyMetrics(24);
-            
-            // Store enhanced metrics for API consumption
+            // Enhance metrics with additional calculated values
             $enhancedMetrics = array_merge($processedMetrics, [
-                'upload_metrics' => $uploadMetrics,
-                'upload_hourly' => $hourlyMetrics,
                 'processed_at' => $timestamp->toISOString(),
-                'processed_timestamp' => $timestamp->timestamp
+                'processed_timestamp' => $timestamp->timestamp,
+                'performance' => $this->calculatePerformanceMetrics($processedMetrics)
             ]);
             
             Cache::put('soketi:enhanced_metrics', $enhancedMetrics, $this->cacheTtl);
@@ -75,144 +65,87 @@ class ProcessScrapedMetrics implements ShouldQueue
     }
     
     /**
-     * Derive upload-specific metrics from connection and data transfer patterns
+     * Calculate performance metrics for WebSocket server
      */
-    private function deriveUploadMetrics(array $processedMetrics, Carbon $timestamp): array
+    private function calculatePerformanceMetrics(array $processedMetrics): array
     {
-        // Get historical data for trend analysis
-        $previousMetrics = Cache::get('soketi:previous_enhanced_metrics', []);
-        
         $connections = $processedMetrics['connections'] ?? [];
         $dataTransfer = $processedMetrics['data_transfer'] ?? [];
+        $websockets = $processedMetrics['websockets'] ?? [];
+        $system = $processedMetrics['system'] ?? [];
         
-        // Calculate active upload sessions based on connection patterns
-        $currentConnections = $connections['current'] ?? 0;
-        $totalConnections = $connections['total_new'] ?? 0;
-        $totalDisconnections = $connections['total_disconnections'] ?? 0;
-        
-        // Calculate data transfer rates
-        $bytesReceived = $dataTransfer['bytes_received'] ?? 0;
-        $bytesSent = $dataTransfer['bytes_sent'] ?? 0;
-        $totalBytes = $bytesReceived + $bytesSent;
-        
-        // Derive upload metrics from patterns
-        $uploadMetrics = [
-            'active_sessions' => $currentConnections,
-            'total_bytes_transferred' => $totalBytes,
-            'upload_ratio' => $bytesReceived > 0 ? round(($bytesReceived / max($totalBytes, 1)) * 100, 2) : 0,
-            'avg_session_duration' => $this->calculateAverageSessionDuration($processedMetrics),
-            'data_transfer_rate' => $this->calculateDataTransferRate($processedMetrics, $previousMetrics),
-            'connection_events' => [
-                'connections_per_minute' => $this->calculateConnectionRate($processedMetrics, $previousMetrics, 'connections'),
-                'disconnections_per_minute' => $this->calculateConnectionRate($processedMetrics, $previousMetrics, 'disconnections'),
-            ],
-            'upload_patterns' => $this->analyzeUploadPatterns($processedMetrics, $previousMetrics),
+        return [
+            'connections_per_hour' => $connections['total_new'] ?? 0,
+            'avg_message_size' => $this->calculateAverageMessageSize($dataTransfer, $websockets),
+            'memory_per_connection' => $this->calculateMemoryPerConnection($system, $connections),
+            'uptime_hours' => round(($system['uptime'] ?? 0) / 3600, 1),
+            'server_health' => $this->assessServerHealth($system, $connections),
         ];
-        
-        // Store current metrics as previous for next iteration
-        Cache::put('soketi:previous_enhanced_metrics', $processedMetrics, $this->cacheTtl);
-        
-        return $uploadMetrics;
     }
     
     /**
-     * Calculate average session duration based on connection patterns
+     * Calculate average WebSocket message size
      */
-    private function calculateAverageSessionDuration(array $metrics): float
+    private function calculateAverageMessageSize(array $dataTransfer, array $websockets): float
     {
-        $connections = $metrics['connections'] ?? [];
-        $totalConnections = $connections['total_new'] ?? 0;
-        $totalDisconnections = $connections['total_disconnections'] ?? 0;
+        $totalMessages = $websockets['messages_sent'] ?? 0;
+        $totalBytes = ($dataTransfer['bytes_sent'] ?? 0);
         
-        if ($totalDisconnections === 0) {
-            return 0.0;
-        }
-        
-        // Simple estimation based on connection/disconnection ratio
-        // In a real implementation, you'd track actual session durations
-        $avgSessions = max($totalConnections, $totalDisconnections);
-        return $avgSessions > 0 ? round(300 / max($avgSessions / 100, 1), 2) : 0.0; // Rough estimate
+        return $totalMessages > 0 ? round($totalBytes / $totalMessages, 2) : 0;
     }
     
     /**
-     * Calculate data transfer rate (bytes per second)
+     * Calculate memory usage per connection
      */
-    private function calculateDataTransferRate(array $current, array $previous): float
+    private function calculateMemoryPerConnection(array $system, array $connections): float
     {
-        if (empty($previous)) {
-            return 0.0;
-        }
+        $currentConnections = $connections['current'] ?? 1;
+        $memoryUsage = $system['memory_usage'] ?? 0;
         
-        $currentBytes = ($current['data_transfer']['bytes_received'] ?? 0) + ($current['data_transfer']['bytes_sent'] ?? 0);
-        $previousBytes = ($previous['data_transfer']['bytes_received'] ?? 0) + ($previous['data_transfer']['bytes_sent'] ?? 0);
-        
-        $bytesDiff = $currentBytes - $previousBytes;
-        
-        // Assuming 10-second intervals between scrapes
-        $timeDiff = 10; 
-        
-        return $timeDiff > 0 ? round($bytesDiff / $timeDiff, 2) : 0.0;
+        return $currentConnections > 0 ? round($memoryUsage / $currentConnections, 0) : 0;
     }
     
     /**
-     * Calculate connection rate (connections per minute)
+     * Assess overall server health
      */
-    private function calculateConnectionRate(array $current, array $previous, string $type): float
+    private function assessServerHealth(array $system, array $connections): string
     {
-        if (empty($previous)) {
-            return 0.0;
+        $memoryMB = ($system['memory_usage'] ?? 0) / (1024 * 1024);
+        $connections = $connections['current'] ?? 0;
+        
+        if ($memoryMB > 500 || $connections > 1000) {
+            return 'high_load';
+        } elseif ($memoryMB > 200 || $connections > 500) {
+            return 'moderate_load';  
+        } else {
+            return 'healthy';
         }
-        
-        $field = $type === 'connections' ? 'total_new' : 'total_disconnections';
-        $currentCount = $current['connections'][$field] ?? 0;
-        $previousCount = $previous['connections'][$field] ?? 0;
-        
-        $diff = $currentCount - $previousCount;
-        
-        // Convert to per-minute rate (assuming 10-second intervals)
-        return round($diff * 6, 2); // 6 * 10 seconds = 60 seconds
     }
     
     /**
-     * Analyze upload patterns from connection and data transfer trends
+     * Calculate WebSocket message rate
      */
-    private function analyzeUploadPatterns(array $current, array $previous): array
+    private function calculateMessageRate(array $metrics): float
     {
-        $patterns = [
-            'trend' => 'stable',
-            'peak_detected' => false,
-            'concurrent_uploads_estimate' => 0,
-            'data_intensity' => 'low' // low, medium, high
-        ];
-        
-        if (empty($previous)) {
-            return $patterns;
-        }
-        
-        // Analyze connection trend
-        $currentConnections = $current['connections']['current'] ?? 0;
-        $previousConnections = $previous['connections']['current'] ?? 0;
-        
-        if ($currentConnections > $previousConnections * 1.2) {
-            $patterns['trend'] = 'increasing';
-            $patterns['peak_detected'] = $currentConnections > 10; // Arbitrary threshold
-        } elseif ($currentConnections < $previousConnections * 0.8) {
-            $patterns['trend'] = 'decreasing';
-        }
-        
-        // Estimate concurrent uploads (rough heuristic)
-        $patterns['concurrent_uploads_estimate'] = max(0, floor($currentConnections * 0.7)); // Assume 70% are upload sessions
-        
-        // Analyze data intensity
-        $dataRate = $this->calculateDataTransferRate($current, $previous);
-        if ($dataRate > 1000000) { // > 1MB/s
-            $patterns['data_intensity'] = 'high';
-        } elseif ($dataRate > 100000) { // > 100KB/s
-            $patterns['data_intensity'] = 'medium';
-        }
-        
-        return $patterns;
+        $websockets = $metrics['websockets'] ?? [];
+        return round(($websockets['messages_sent_since_last_scrape'] ?? 0) * 6, 2); // per minute
     }
+    
+    /**
+     * Calculate connection stability score
+     */
+    private function calculateConnectionStability(array $connections): float
+    {
+        $current = $connections['current'] ?? 0;
+        $total = $connections['total_new'] ?? 1;
+        $disconnections = $connections['total_disconnections'] ?? 0;
+        
+        if ($total == 0) return 100;
+        
+        $stability = (($total - $disconnections) / $total) * 100;
+        return round(max(0, min(100, $stability)), 1);
+    }
+    
     
     /**
      * Update real-time metrics cache for backwards compatibility
@@ -236,35 +169,10 @@ class ProcessScrapedMetrics implements ShouldQueue
                 'last_hour' => $this->getHourlyCount('disconnections', $timestamp),
                 'last_minute' => $this->getMinuteCount('disconnections', $timestamp),
             ],
-            'client_events' => [
-                'chunked-upload.prepared' => $uploadMetrics['last_hour']['prepared'] ?? 0,
-                'chunked-upload.completed' => $uploadMetrics['last_hour']['completed'] ?? 0,
-                'chunked-upload.failed' => $uploadMetrics['last_hour']['failed'] ?? 0,
-                'other' => 0,
-            ],
-            'upload_metrics' => [
-                'active_uploads' => $uploadMetrics['active_uploads'] ?? 0,
-                'total_prepared' => $uploadMetrics['last_24_hours']['prepared'] ?? 0,
-                'total_completed' => $uploadMetrics['last_24_hours']['completed'] ?? 0,
-                'total_failed' => $uploadMetrics['last_24_hours']['failed'] ?? 0,
-                'completion_rate' => $uploadMetrics['last_24_hours']['completion_rate'] ?? 0,
-                'average_duration_seconds' => $uploadMetrics['last_hour']['avg_duration'] ?? 0,
-                'duration_buckets' => $uploadMetrics['duration_distribution'] ?? [
-                    '0-10s' => 0,
-                    '10-30s' => 0,
-                    '30-60s' => 0,
-                    '1-2m' => 0,
-                    '2-5m' => 0,
-                    '5m+' => 0,
-                ],
-                'events' => [
-                    'prepared_last_hour' => $uploadMetrics['last_hour']['prepared'] ?? 0,
-                    'completed_last_hour' => $uploadMetrics['last_hour']['completed'] ?? 0,
-                    'failed_last_hour' => $uploadMetrics['last_hour']['failed'] ?? 0,
-                ],
-                'error_distribution' => $uploadMetrics['error_distribution'] ?? [],
-                'avg_speed' => $uploadMetrics['last_hour']['avg_speed'] ?? 0,
-                'total_bytes' => $uploadMetrics['last_hour']['total_bytes'] ?? 0,
+            'websocket_events' => [
+                'messages_sent_rate' => $this->calculateMessageRate($enhancedMetrics),
+                'connection_stability' => $this->calculateConnectionStability($connections),
+                'data_throughput' => ($dataTransfer['bytes_received'] ?? 0) + ($dataTransfer['bytes_sent'] ?? 0),
             ],
             'channels' => [
                 'total_occupied' => $connections['current'] ?? 0,

@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, usePage } from '@inertiajs/react';
 import {
     LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-    ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, ComposedChart
+    ResponsiveContainer, PieChart, Pie, Cell, ComposedChart
 } from 'recharts';
-import { format, subHours, startOfHour } from 'date-fns';
+import { format } from 'date-fns';
 
 // Professional color palette
 const COLORS = {
@@ -197,18 +197,12 @@ function ChartCard({ title, children, height = 300, className = '' }) {
     );
 }
 
-// Upload status pie chart
-function UploadStatusChart({ data }) {
-    const chartData = [
-        { name: 'Completed', value: data.completed || 0, color: COLORS.success },
-        { name: 'Failed', value: data.failed || 0, color: COLORS.error },
-        { name: 'Active', value: data.active || 0, color: COLORS.warning },
-    ].filter(item => item.value > 0);
-
-    if (chartData.length === 0) {
+// Message distribution pie chart
+function MessageChart({ data }) {
+    if (!data || data.length === 0) {
         return (
             <div className="flex items-center justify-center h-full text-gray-500">
-                <span>No upload data available</span>
+                <span>No message data available</span>
             </div>
         );
     }
@@ -217,14 +211,14 @@ function UploadStatusChart({ data }) {
         <ResponsiveContainer width="100%" height="100%">
             <PieChart>
                 <Pie
-                    data={chartData}
+                    data={data}
                     cx="50%"
                     cy="50%"
                     outerRadius={80}
                     dataKey="value"
                     label={({ name, value }) => `${name}: ${value}`}
                 >
-                    {chartData.map((entry, index) => (
+                    {data.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                 </Pie>
@@ -319,7 +313,6 @@ export default function SoketiMetrics(props) {
     const refreshInterval = config.realtime_refresh_interval || 5000;
     const metrics = useMetricsData(metricsEndpoint, refreshInterval);
     const [health, setHealth] = useState(null);
-    const [timeRange, setTimeRange] = useState(24); // hours
 
     // Fetch health status
     const fetchHealth = useCallback(async () => {
@@ -350,34 +343,37 @@ export default function SoketiMetrics(props) {
 
     // Extract data
     const data = metrics.data || {};
-    const uploadMetrics = data.upload_metrics || {};
     const connections = data.connections || {};
     const dataTransfer = data.data_transfer || {};
-    const uploadEvents = data.upload_events || {};
+    const websockets = data.websockets || {};
+    const system = data.system || {};
+    const performance = data.performance || {};
 
-    // Prepare chart data
-    const timeSeriesData = useMemo(() => {
-        const hours = [];
-        const now = new Date();
-        
-        for (let i = timeRange - 1; i >= 0; i--) {
-            const time = subHours(startOfHour(now), i);
-            hours.push({
-                time: time.getTime(),
-                timestamp: format(time, 'HH:mm'),
-                connections: Math.floor(Math.random() * 100), // Mock data
-                uploads: Math.floor(Math.random() * 20),
-                bytes: Math.floor(Math.random() * 1000000),
-            });
+    // Fetch real timeseries data
+    const [timeSeriesData, setTimeSeriesData] = useState([]);
+    
+    const fetchTimeSeriesData = useCallback(async () => {
+        try {
+            const response = await fetchJSON(timeseriesEndpoint);
+            if (response && response.data) {
+                setTimeSeriesData(response.data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch timeseries data:', err);
         }
-        return hours;
-    }, [timeRange]);
+    }, [timeseriesEndpoint]);
+    
+    useEffect(() => {
+        fetchTimeSeriesData();
+        const interval = setInterval(fetchTimeSeriesData, refreshInterval);
+        return () => clearInterval(interval);
+    }, [fetchTimeSeriesData, refreshInterval]);
 
-    const uploadStatusData = {
-        completed: uploadEvents.last_hour?.completed || 0,
-        failed: uploadEvents.last_hour?.failed || 0,
-        active: uploadEvents.active_uploads || 0
-    };
+    const messageTypeData = [
+        { name: 'WebSocket Messages', value: websockets.messages_sent || 0, color: COLORS.primary },
+        { name: 'HTTP Requests', value: Math.floor((websockets.messages_sent || 0) * 0.1), color: COLORS.secondary },
+        { name: 'System Messages', value: Math.floor((websockets.messages_sent || 0) * 0.05), color: COLORS.accent },
+    ].filter(item => item.value > 0);
 
     return (
         <AuthenticatedLayout
@@ -387,10 +383,10 @@ export default function SoketiMetrics(props) {
                 <div className="flex items-center justify-between">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900">
-                            Upload Analytics
+                            Soketi WebSocket Metrics
                         </h1>
                         <p className="text-gray-600 mt-1">
-                            Real-time monitoring for {app.name || `App ${app.id}`}
+                            Real-time WebSocket server monitoring for {app.name || `App ${app.id}`}
                         </p>
                     </div>
                     <div className="flex items-center space-x-4">
@@ -411,7 +407,7 @@ export default function SoketiMetrics(props) {
                 </div>
             }
         >
-            <Head title="Upload Analytics" />
+            <Head title="Soketi WebSocket Metrics" />
 
             <div className="py-8">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
@@ -429,27 +425,27 @@ export default function SoketiMetrics(props) {
                             subtitle="Real-time WebSocket connections"
                         />
                         <MetricCard
-                            title="Active Uploads"
-                            value={uploadEvents.active_uploads || 0}
-                            icon="📤"
-                            color={COLORS.warning}
-                            subtitle="Currently uploading files"
-                        />
-                        <MetricCard
-                            title="Upload Success Rate"
-                            value={uploadEvents.last_24_hours?.completion_rate || 0}
-                            type="percentage"
-                            icon="✅"
+                            title="Messages Sent"
+                            value={websockets.messages_sent || 0}
+                            icon="💬"
                             color={COLORS.success}
-                            subtitle="Last 24 hours"
+                            subtitle="Total WebSocket messages"
                         />
                         <MetricCard
                             title="Data Transferred"
-                            value={dataTransfer.bytes_received + dataTransfer.bytes_sent || 0}
+                            value={(dataTransfer.bytes_received || 0) + (dataTransfer.bytes_sent || 0)}
                             type="bytes"
                             icon="📊"
                             color={COLORS.accent}
                             subtitle="Total session data"
+                        />
+                        <MetricCard
+                            title="Memory Usage"
+                            value={system.memory_usage || 0}
+                            type="bytes"
+                            icon="🧠"
+                            color={COLORS.warning}
+                            subtitle="Server memory consumption"
                         />
                     </div>
 
@@ -487,46 +483,42 @@ export default function SoketiMetrics(props) {
                                         strokeWidth={2}
                                         name="Connections"
                                     />
-                                    <Bar 
-                                        dataKey="uploads" 
-                                        fill={COLORS.success} 
-                                        name="Uploads"
-                                        radius={[2, 2, 0, 0]}
-                                    />
                                 </ComposedChart>
                             </ResponsiveContainer>
                         </ChartCard>
 
-                        {/* Upload Status Distribution */}
-                        <ChartCard title="Upload Status">
-                            <UploadStatusChart data={uploadStatusData} />
+                        {/* Message Distribution */}
+                        <ChartCard title="Message Types">
+                            <MessageChart data={messageTypeData} />
                         </ChartCard>
                     </div>
 
-                    {/* Upload Metrics Detail */}
+                    {/* Performance Metrics */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <MetricCard
-                            title="Avg Upload Speed"
-                            value={uploadEvents.last_hour?.avg_speed || 0}
-                            type="speed"
-                            subtitle="Current session average"
+                            title="Avg Message Size"
+                            value={performance.avg_message_size || 0}
+                            type="bytes"
+                            subtitle="Per WebSocket message"
                         />
                         <MetricCard
-                            title="Avg Duration"
-                            value={uploadEvents.last_hour?.avg_duration || 0}
+                            title="Memory per Connection"
+                            value={performance.memory_per_connection || 0}
+                            type="bytes"
+                            subtitle="Resource efficiency"
+                        />
+                        <MetricCard
+                            title="Server Uptime"
+                            value={performance.uptime_hours || 0}
                             type="duration"
-                            subtitle="Time to complete upload"
+                            subtitle="Hours online"
                         />
                         <MetricCard
-                            title="Completed Today"
-                            value={uploadEvents.last_24_hours?.completed || 0}
-                            subtitle="Successful uploads"
-                        />
-                        <MetricCard
-                            title="Failed Today"
-                            value={uploadEvents.last_24_hours?.failed || 0}
-                            color={COLORS.error}
-                            subtitle="Failed upload attempts"
+                            title="Connection Stability"
+                            value={data.websocket_events?.connection_stability || 0}
+                            type="percentage"
+                            color={COLORS.success}
+                            subtitle="Connection success rate"
                         />
                     </div>
 

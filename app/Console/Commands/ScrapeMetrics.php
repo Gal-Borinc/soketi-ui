@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use App\Jobs\ProcessScrapedMetrics;
-use App\Services\UploadMetricsTracker;
 
 class ScrapeMetrics extends Command
 {
@@ -197,11 +196,6 @@ class ScrapeMetrics extends Command
         // Process key metrics for easy access
         $processedMetrics = $this->extractKeyMetrics($prometheusMetrics, $usageMetrics);
         
-        // Get upload metrics from tracker service
-        $uploadTracker = app(UploadMetricsTracker::class);
-        $uploadMetrics = $uploadTracker->getRealtimeMetrics();
-        $processedMetrics['upload_events'] = $uploadMetrics;
-        
         // Store processed metrics with timestamp
         $processedMetrics['scraped_at'] = $timestamp->toISOString();
         $processedMetrics['scraped_timestamp'] = $timestamp->timestamp;
@@ -211,7 +205,7 @@ class ScrapeMetrics extends Command
         // Store time-series data for charts
         $this->storeTimeSeriesData($processedMetrics, $timestamp);
         
-        $this->line("Stored processed metrics in cache with upload event data");
+        $this->line("Stored processed Soketi metrics in cache");
     }
     
     /**
@@ -358,25 +352,31 @@ class ScrapeMetrics extends Command
         // Store minute-level data (for real-time charts)
         $minuteData = [
             'connections' => $metrics['connections']['current'],
-            'new_connections' => $metrics['connections']['total_new'],
-            'disconnections' => $metrics['connections']['total_disconnections'],
+            'messages_sent' => $metrics['websockets']['messages_sent'],
             'bytes_transferred' => $metrics['data_transfer']['bytes_received'] + $metrics['data_transfer']['bytes_sent'],
-            'timestamp' => $timestamp->timestamp
+            'memory_usage' => $metrics['system']['memory_usage'],
+            'timestamp' => $timestamp->timestamp,
+            'time_label' => $timestamp->format('H:i')
         ];
         
-        Cache::put("soketi:timeseries:minute:{$timeKey}", $minuteData, 3600); // 1 hour TTL
+        Cache::put("soketi:timeseries:minute:{$timeKey}", $minuteData, 7200); // 2 hour TTL
         
-        // Store hourly aggregated data
+        // Store hourly aggregated data  
         $hourlyData = Cache::get("soketi:timeseries:hour:{$hourKey}", [
-            'connections_sum' => 0,
-            'connections_count' => 0,
-            'bytes_sum' => 0,
-            'samples' => 0
+            'avg_connections' => 0,
+            'total_messages' => 0,
+            'total_bytes' => 0,
+            'avg_memory' => 0,
+            'samples' => 0,
+            'peak_connections' => 0
         ]);
         
-        $hourlyData['connections_sum'] += $metrics['connections']['current'];
-        $hourlyData['connections_count']++;
-        $hourlyData['bytes_sum'] += $metrics['data_transfer']['bytes_received'] + $metrics['data_transfer']['bytes_sent'];
+        $currentConnections = $metrics['connections']['current'];
+        $hourlyData['avg_connections'] = (($hourlyData['avg_connections'] * $hourlyData['samples']) + $currentConnections) / ($hourlyData['samples'] + 1);
+        $hourlyData['peak_connections'] = max($hourlyData['peak_connections'], $currentConnections);
+        $hourlyData['total_messages'] = $metrics['websockets']['messages_sent'];
+        $hourlyData['total_bytes'] = $metrics['data_transfer']['bytes_received'] + $metrics['data_transfer']['bytes_sent'];
+        $hourlyData['avg_memory'] = (($hourlyData['avg_memory'] * $hourlyData['samples']) + $metrics['system']['memory_usage']) / ($hourlyData['samples'] + 1);
         $hourlyData['samples']++;
         $hourlyData['last_updated'] = $timestamp->timestamp;
         
