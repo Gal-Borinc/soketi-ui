@@ -90,17 +90,6 @@ RUN echo "* * * * * cd /var/www/html && php artisan schedule:run >/dev/null 2>&1
 RUN chmod 0644 /etc/cron.d/soketi-scraper
 RUN crontab /etc/cron.d/soketi-scraper
 
-# Create entrypoint script
-RUN echo '#!/bin/bash\n\
-# Run database migrations on startup\n\
-php artisan migrate --force\n\
-\n\
-# Start cron daemon\n\
-service cron start\n\
-\n\
-# Start the original container process\n\
-exec "$@"' > /entrypoint.sh
-
-RUN chmod +x /entrypoint.sh
-
-ENTRYPOINT ["/entrypoint.sh"]
+# Copy initialization script for manual execution
+COPY docker-init.sh /usr/local/bin/docker-init.sh
+RUN chmod +x /usr/local/bin/docker-init.sh
